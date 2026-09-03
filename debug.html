@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Арки — matrix3d corner-pin diagnostics</title>
+<style>
+  html,body{ margin:0; padding:0; background:#111; color:#eee;
+    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+
+  .toolbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; gap:16px; align-items:center; flex-wrap:wrap;
+    padding:10px 16px; background:#1b1b1b; border-bottom:1px solid #333;
+  }
+  .toolbar label{ font-size:13px; display:flex; gap:6px; align-items:center; cursor:pointer; }
+  .toolbar input[type=range]{ width:120px; }
+  .toolbar input[type=checkbox]{ width:15px; height:15px; }
+  .hint{ font-size:12px; color:#999; padding:6px 16px; }
+
+  .viewport-outer{
+    width:100%; display:flex; justify-content:center;
+    background:#0a0a0a; overflow:auto; padding:24px 0;
+  }
+
+  #stage-holder{ width:2546px; height:900px; transform-origin:top left; }
+
+  .stage{
+    position:relative;
+    width:2546px;
+    height:900px;
+    box-shadow:0 0 0 1px #333;
+  }
+  .stage img.bg{
+    position:absolute; top:0; left:0; width:2546px; height:900px; display:block;
+  }
+  .arch{
+    position:absolute;
+    top:0; left:0;
+    transform-origin:0 0;
+    pointer-events:none;
+  }
+  body.hide-arches .arch{ display:none; }
+
+  #guideSvg{ position:absolute; top:0; left:0; width:2546px; height:900px; pointer-events:none; display:none; }
+  body.show-guides #guideSvg{ display:block; }
+  #guideSvg polygon{ fill:rgba(0,201,122,.10); stroke:#00c97a; stroke-width:2.5; }
+  #guideSvg text{ fill:#04150c; font-size:16px; font-weight:700; }
+
+  body.show-panels .stage::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image:url('ШАБЛОН v1.png');
+    background-size:100% 100%;
+    opacity:.30;
+    pointer-events:none;
+    z-index:40;
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <strong style="margin-right:8px;">Арки — matrix3d corner-pin diagnostics</strong>
+  <label><input type="checkbox" id="chkPanels"> Показать шаблон (overlay)</label>
+  <label><input type="checkbox" id="chkGuides"> Показать зоны/номера</label>
+  <label><input type="checkbox" id="chkArches" checked> Показать арки</label>
+  <label>Масштаб превью:
+    <input id="zRange" type="range" min="30" max="100" step="1" value="70">
+    <span id="zVal">70%</span>
+  </label>
+</div>
+<div class="hint">
+  Диагностика текущей production-геометрии (совпадает с index.html). Source rectangle для
+  homography каждой арки: X — bbox самой крупной connected component alpha-маски (реальное
+  тело арки, без заголовка и без alpha-артефактов), Y — вся высота cropped-изображения
+  (title+arch). Результат — matrix3d(...) применяется к единому PNG (заголовок+арка) без
+  CSS perspective и без ручных left/top/rotate/scale. Данные пересчитываются compute_transforms.py
+  → arch_transforms.json.
+</div>
+
+<div class="viewport-outer">
+  <div id="stage-holder">
+    <div class="stage" id="stage">
+      <img class="bg" src="BACKGROUND.png" alt="background">
+
+      <img class="arch" id="arch-1" src="cropped/1.png"
+           style="width:671px; height:1278px; transform:matrix3d(0.510851791, 0.187288676, 0, 0.000310079, 0.005280845, 0.61989375, 0, 0.000015045, 0, 0, 1, 0, 81.248488184, 67.619345268, 0, 1);" />
+
+      <img class="arch" id="arch-2" src="cropped/2.png"
+           style="width:671px; height:1281px; transform:matrix3d(0.429320632, 0.142842734, 0, 0.000236484, 0.01505603, 0.498398497, 0, 0.000025825, 0, 0, 1, 0, 387.436928679, 184.553347799, 0, 1);" />
+
+      <img class="arch" id="arch-3" src="cropped/3.png"
+           style="width:671px; height:1275px; transform:matrix3d(0.378218622, 0.135813917, 0, 0.000225314, 0.02171349, 0.419743468, 0, 0.000028951, 0, 0, 1, 0, 609.604398924, 258.829241393, 0, 1);" />
+
+      <img class="arch" id="arch-4" src="cropped/4.png"
+           style="width:705px; height:1279px; transform:matrix3d(-0.130209163, -0.109345417, 0, -0.000174561, -0.03111486, 0.329101717, 0, -0.000017402, 0, 0, 1, 0, 1768.354189771, 309.096975588, 0, 1);" />
+
+      <img class="arch" id="arch-5" src="cropped/5.png"
+           style="width:671px; height:1281px; transform:matrix3d(-0.148304757, -0.119529077, 0, -0.000193822, -0.034590741, 0.391461002, 0, -0.000017639, 0, 0, 1, 0, 1935.967815346, 249.843417858, 0, 1);" />
+
+      <img class="arch" id="arch-6" src="cropped/6.png"
+           style="width:671px; height:1280px; transform:matrix3d(-0.232664391, -0.150683474, 0, -0.000247385, -0.026821274, 0.479096839, 0, -0.000012236, 0, 0, 1, 0, 2158.562786455, 171.999000076, 0, 1);" />
+
+      <svg id="guideSvg" viewBox="0 0 2546 900">
+        <g id="guideGroup"></g>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CORNERS = {
+    1: {TL:[132,85], TR:[351,160], BR:[351,803], BL:[136,836], title:"1 · Experience"},
+    2: {TL:[423,195], TR:[583,242], BR:[583,771], BL:[428,792], title:"2 · Global Reserve"},
+    3: {TL:[635,267], TR:[750,304], BR:[750,745], BL:[639,762], title:"3 · Move Money"},
+    4: {TL:[1788,303], TR:[1904,267], BR:[1907,763], BL:[1788,749], title:"4 · Global Connections"},
+    5: {TL:[1961,242], TR:[2111,195], BR:[2115,792], BL:[1961,772], title:"5 · Global Dream"},
+    6: {TL:[2192,160], TR:[2401,85], BR:[2405,836], BL:[2192,803], title:"6 · Record Library"},
+  };
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const g = document.getElementById('guideGroup');
+  Object.values(CORNERS).forEach(c=>{
+    const pts = [c.TL,c.TR,c.BR,c.BL].map(p=>p.join(',')).join(' ');
+    const poly = document.createElementNS(svgNS,'polygon');
+    poly.setAttribute('points', pts);
+    g.appendChild(poly);
+    const cx = (c.TL[0]+c.TR[0]+c.BR[0]+c.BL[0])/4;
+    const cy = Math.min(c.TL[1],c.TR[1]) - 10;
+    const textEl = document.createElementNS(svgNS,'text');
+    textEl.setAttribute('x', cx); textEl.setAttribute('y', cy);
+    textEl.setAttribute('text-anchor','middle');
+    textEl.textContent = c.title;
+    g.appendChild(textEl);
+  });
+
+  const chkPanels = document.getElementById('chkPanels');
+  const chkGuides = document.getElementById('chkGuides');
+  const chkArches = document.getElementById('chkArches');
+  const zRange = document.getElementById('zRange');
+  const zVal = document.getElementById('zVal');
+  const holder = document.getElementById('stage-holder');
+
+  chkPanels.onchange = () => document.body.classList.toggle('show-panels', chkPanels.checked);
+  chkGuides.onchange = () => document.body.classList.toggle('show-guides', chkGuides.checked);
+  chkArches.onchange = () => document.body.classList.toggle('hide-arches', !chkArches.checked);
+
+  function applyZoom(){
+    const k = zRange.value/100;
+    holder.style.transform = `scale(${k})`;
+    holder.style.width = (2546*k)+'px';
+    holder.style.height = (900*k)+'px';
+    zVal.textContent = Math.round(k*100)+'%';
+  }
+  zRange.oninput = applyZoom;
+  applyZoom();
+</script>
+
+</body>
+</html>
