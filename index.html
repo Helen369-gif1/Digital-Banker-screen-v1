@@ -5,29 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Арки — matrix3d corner-pin (заголовок + арка = единый объект)</title>
 <style>
-  html,body{ margin:0; padding:0; background:#111; color:#eee;
-    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
-
-  .toolbar{
-    position:sticky; top:0; z-index:50;
-    display:flex; gap:16px; align-items:center; flex-wrap:wrap;
-    padding:10px 16px; background:#1b1b1b; border-bottom:1px solid #333;
+  html,body{
+    width:100%; height:100%; margin:0; padding:0; overflow:hidden;
+    background:#0a0a0a; color:#eee;
+    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
   }
-  .toolbar label{ font-size:13px; display:flex; gap:6px; align-items:center; }
-  .toolbar input[type=range]{ width:120px; }
-  .toolbar button{
-    background:#333; color:#eee; border:1px solid #555; border-radius:4px;
-    padding:5px 10px; cursor:pointer; font-size:13px;
-  }
-  .toolbar button.active{ background:#8a5a2b; border-color:#c98a4b; }
-  .hint{ font-size:12px; color:#999; padding:6px 16px; }
 
+  /* Сцена — единственное, что есть на странице: 100vw x 100vh от самого
+     верхнего края окна, без служебной панели/отступов над ней. */
   .viewport-outer{
-    width:100%; display:flex; justify-content:center;
-    background:#0a0a0a; overflow:auto; padding:24px 0;
+    position:fixed;
+    inset:0;
+    width:100vw;
+    height:100vh;
+    padding:0;
+    background:#0a0a0a;
+    overflow:hidden;
   }
 
-  #stage-holder{ width:2546px; height:900px; transform-origin:top left; }
+  /* Центрирование и автоматический cover-масштаб — единственный источник
+     масштаба (renderScale, см. JS). Base-размер 2546x900 всегда
+     фиксирован в CSS; JS меняет только transform. */
+  #stage-holder{
+    position:absolute;
+    top:50%; left:50%;
+    width:2546px; height:900px;
+    transform-origin:50% 50%;
+  }
+
+  /* Общий контейнер mouse-parallax: единственный уровень, к которому
+     применяется движение мыши (translateX + rotateY всей сцены как
+     единого объекта). Сам по себе не несёт никакого transform по
+     умолчанию — в нейтральном положении (mouseX=0) JS ставит сюда
+     identity-эквивалентный transform, поэтому сцена не сдвигается. */
+  #scene-parallax{
+    position:relative;
+    width:2546px;
+    height:900px;
+    will-change:transform;
+  }
 
   /* === структура и система координат — как в positioning_demo_standalone (1) === */
   .stage{
@@ -43,8 +59,72 @@
     position:absolute;
     top:0; left:0;
     transform-origin:0 0;   /* как в эталонном файле: матрица сама несёт весь перенос */
+    /* Хит-тестинг переехал на .arch-lift (см. ниже) — .arch остаётся
+       носителем matrix3d/tabindex/role и всех обработчиков, но сам больше
+       не является целью указателя, чтобы не создавать вторую (неподвижную)
+       область клика поверх увеличивающегося .arch-lift. */
     pointer-events:none;
+    outline:none;           /* фокус показывается через .is-hovered (свечение), не рамкой */
+    transition:filter 0.25s ease;
+    filter:
+      drop-shadow(0 0 0 rgba(255, 209, 128, 0))
+      drop-shadow(0 0 0 rgba(255, 209, 128, 0));
   }
+  .arch.is-hovered{
+    filter:
+      drop-shadow(0 0 10px rgba(255, 209, 128, 0.55))
+      drop-shadow(0 0 24px rgba(255, 178, 90, 0.35));
+    z-index:50; /* поднимаем только активную арку над соседями */
+  }
+  .arch-lift{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    transform-origin:50% 100%;
+    transition:transform 0.25s ease;
+    will-change:transform;
+    /* Реальная кликабельная/hover-область: clip-path и scale(1.03) теперь
+       на одном и том же элементе, поэтому маска увеличивается вместе с
+       изображением и не обрезает надпись при hover (см. #arch-N .arch-lift
+       ниже). Events на .arch-lift всплывают к обработчикам на .arch. */
+    pointer-events:auto;
+    cursor:pointer;
+  }
+  .arch.is-hovered .arch-lift{
+    transform:scale(1.03);
+  }
+  .arch-image{
+    display:block;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+    -webkit-user-drag:none;
+    user-select:none;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .arch, .arch-lift{ transition:none; }
+  }
+
+  /* Точечное сужение кликабельной/hover-области по краям: PNG уже
+     обрезаны по общему bbox "заголовок + арка", но сам bbox — прямоугольник,
+     а видимое содержимое (узкий заголовок сверху, скруглённый свод арки,
+     фаска у основания) прозрачно по углам — там наведение/клик работали бы
+     "по воздуху". Полигоны посчитаны офлайн по альфа-каналу каждого PNG
+     (реальный canvas-alpha-hit-test в браузере недоступен: при открытии
+     файла как file:// canvas помечается tainted и getImageData бросает
+     SecurityError — так же, как в эталонном main.js). Каждый вырез —
+     заведомо (с запасом ~28%) меньше подтверждённо прозрачной области,
+     поэтому видимые пиксели арки не обрезаются; матрицы/картинки не
+     менялись. Висит на .arch-lift (не на .arch), чтобы маска
+     масштабировалась вместе с scale(1.03) при hover и не обрезала
+     увеличенную надпись/арку неподвижным контуром. */
+  #arch-1 .arch-lift{ clip-path: polygon(20.42% 0%, 85.25% 0%, 100% 7.75%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.19%, 0% 10.72%); }
+  #arch-2 .arch-lift{ clip-path: polygon(17.14% 0%, 93.29% 0%, 100% 3.51%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.21%, 0% 8.98%); }
+  #arch-3 .arch-lift{ clip-path: polygon(19.23% 0%, 90.61% 0%, 100% 4.94%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.18%, 0% 10.12%); }
+  #arch-4 .arch-lift{ clip-path: polygon(9.93% 0%, 97.16% 0%, 100% 1.56%, 100% 97.19%, 94.89% 100%, 12.34% 100%, 0% 93.20%, 0% 5.47%); }
+  #arch-5 .arch-lift{ clip-path: polygon(19.08% 0%, 91.65% 0%, 100% 4.37%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.21%, 0% 9.99%); }
+  #arch-6 .arch-lift{ clip-path: polygon(15.05% 0%, 95.08% 0%, 100% 2.58%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.20%, 0% 7.89%); }
 
   #guideSvg{ position:absolute; top:0; left:0; width:2546px; height:900px; pointer-events:none; display:none; }
   body.show-guides #guideSvg{ display:block; }
@@ -60,56 +140,203 @@
     opacity:.30;
     pointer-events:none;
   }
+
+  /* ---------- Section modal ----------
+     Прямой потомок body (см. разметку ниже), вне .viewport-outer/
+     #stage-holder/#scene-parallax/.stage — поэтому не наследует
+     cover-масштаб, translateX/rotateY parallax и не обрезается через
+     overflow:hidden сцены. Оформление 1:1 адаптировано из
+     Glonari-Global-Scene-v1/section-modal.css. */
+  #modal-overlay{
+    --gold-bright:#ffe9b8;
+    --gold-bright-rgb:255,233,184;
+
+    position:fixed;
+    inset:0;
+    z-index:80;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(8, 7, 5, 0.45);
+    backdrop-filter:blur(9px) saturate(1.1);
+    -webkit-backdrop-filter:blur(9px) saturate(1.1);
+    opacity:0;
+    visibility:hidden;
+    transition:opacity 0.45s ease, visibility 0s linear 0.45s;
+  }
+  #modal-overlay.active{
+    opacity:1;
+    visibility:visible;
+    transition:opacity 0.45s ease, visibility 0s linear 0s;
+  }
+  #modal-card{
+    width:min(480px, 86vw);
+    background:#1a1610;
+    border:1px solid rgba(217, 184, 119, 0.6);
+    padding:44px 40px 36px;
+    text-align:center;
+    transform:translateY(14px) scale(0.97);
+    opacity:0;
+    transition:transform 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) 0.08s, opacity 0.5s ease 0.08s;
+    box-shadow:0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  #modal-overlay.active #modal-card{
+    transform:translateY(0) scale(1);
+    opacity:1;
+  }
+  #modal-card h2{
+    font-family:Georgia, "Times New Roman", serif;
+    font-weight:400;
+    font-size:24px;
+    color:var(--gold-bright);
+    letter-spacing:0.02em;
+    margin:0 0 14px;
+  }
+  #modal-card p{
+    font-family:"Helvetica Neue", Arial, sans-serif;
+    font-size:13px;
+    line-height:1.6;
+    color:rgba(253, 246, 230, 0.72);
+    letter-spacing:0.01em;
+    margin:0 0 30px;
+  }
+  #modal-card button{
+    all:unset;
+    cursor:pointer;
+    font-family:"Helvetica Neue", Arial, sans-serif;
+    font-size:11px;
+    letter-spacing:0.22em;
+    text-transform:uppercase;
+    color:var(--gold-bright);
+    border:1px solid rgba(217, 184, 119, 0.6);
+    padding:11px 30px;
+    transition:background 0.3s ease, color 0.3s ease;
+  }
+  #modal-card button:hover{ background:rgba(217, 184, 119, 0.12); }
+  #modal-card button:focus-visible{ outline:2px solid var(--gold-bright); outline-offset:3px; }
+
+  @media (prefers-reduced-motion: reduce){
+    #modal-overlay, #modal-card{ transition:none; }
+  }
+
+  /* ---------- Кастомный курсор ----------
+     Прямые потомки body, вне трансформированной сцены. Скрыты по
+     умолчанию (display:none) и включаются JS только после успешной
+     инициализации (html.cursor-ready) — если скрипт не выполнится,
+     системный курсор не пропадёт (см. .arch{cursor:pointer} выше и
+     отсутствие global cursor:none без этого класса). */
+  .cursor-dot, .cursor-ring{
+    display:none;
+    position:fixed;
+    top:0; left:0;
+    border-radius:50%;
+    pointer-events:none;
+    transform:translate(-50%, -50%);
+  }
+  .cursor-dot{
+    width:8px; height:8px;
+    background:var(--gold-bright, #ffe9b8);
+    box-shadow:0 0 0 1.75px rgba(20, 15, 5, 0.8), 0 0 10px 2px rgba(255, 233, 184, 0.6);
+    z-index:9999;
+    transition:
+      width 0.25s cubic-bezier(0.2, 0.9, 0.3, 1),
+      height 0.25s cubic-bezier(0.2, 0.9, 0.3, 1),
+      background 0.25s ease,
+      border 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+  .cursor-dot.hover{
+    width:64px; height:64px;
+    background:rgba(255, 233, 184, 0.08);
+    border:1px solid rgba(255, 233, 184, 0.8);
+    box-shadow:0 0 0 1.5px rgba(0, 0, 0, 0.45), 0 0 30px 6px rgba(255, 233, 184, 0.35);
+  }
+  .cursor-ring{
+    width:30px; height:30px;
+    border:1.5px solid rgba(0, 0, 0, 0.45);
+    box-shadow:0 0 0 1px rgba(255, 255, 255, 0.15);
+    z-index:9998;
+    transition:width 0.4s ease, height 0.4s ease, opacity 0.4s ease;
+  }
+  .cursor-dot.hover ~ .cursor-ring{ opacity:0; }
+
+  html.cursor-ready .cursor-dot,
+  html.cursor-ready .cursor-ring{ display:block; }
+
+  @media (hover: hover) and (pointer: fine){
+    html.cursor-ready, html.cursor-ready body{ cursor:none; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .cursor-dot, .cursor-ring{ transition:none; }
+  }
 </style>
 </head>
 <body>
 
-<div class="toolbar">
-  <strong style="margin-right:8px;">Арки — matrix3d corner-pin</strong>
-  <button id="btnGuides">Показать зоны/номера</button>
-  <button id="btnPanels">Показать шаблон (overlay)</button>
-  <label>Масштаб превью:
-    <input id="zRange" type="range" min="30" max="100" step="1" value="70">
-    <span id="zVal">70%</span>
-  </label>
-</div>
-<div class="hint">
-  Каждая арка — это готовый обрезанный PNG (заголовок + арка = единый bbox, без прозрачных полей),
-  посаженный в целевой угол сцены одной матрицей <code>transform: matrix3d(...)</code>
-  (точный projective corner-pin: 4 угла источника → 4 угла назначения — без CSS <code>perspective</code>,
-  как в эталонном файле). Откройте index.html в браузере; рядом должны лежать BACKGROUND.png,
-  ШАБЛОН v1.png и папка cropped/ с 1–6.png.
-</div>
-
 <div class="viewport-outer">
   <div id="stage-holder">
+    <div id="scene-parallax">
     <div class="stage" id="stage">
-      <img class="bg" src="BACKGROUND.png" alt="background">
+      <img class="bg" src="BACKGROUND.png" alt="background" style="pointer-events:none;">
 
-      <img class="arch" id="arch-1" src="cropped/1.png"
-           style="width:671px; height:1278px; transform:matrix3d(0.510851791, 0.187288676, 0, 0.000310079, 0.005280845, 0.61989375, 0, 0.000015045, 0, 0, 1, 0, 81.248488184, 67.619345268, 0, 1);" />
+      <div class="arch arch-interactive" id="arch-1" data-section="experience"
+           tabindex="0" role="button" aria-label="Experience — open section"
+           style="width:671px; height:1278px; transform:matrix3d(0.510851791, 0.187288676, 0, 0.000310079, 0.005280845, 0.61989375, 0, 0.000015045, 0, 0, 1, 0, 81.248488184, 67.619345268, 0, 1);">
+        <div class="arch-lift"><img class="arch-image" src="cropped/1.png" alt="" draggable="false"></div>
+      </div>
 
-      <img class="arch" id="arch-2" src="cropped/2.png"
-           style="width:671px; height:1281px; transform:matrix3d(0.429320632, 0.142842734, 0, 0.000236484, 0.01505603, 0.498398497, 0, 0.000025825, 0, 0, 1, 0, 387.436928679, 184.553347799, 0, 1);" />
+      <div class="arch arch-interactive" id="arch-2" data-section="globalReserve"
+           tabindex="0" role="button" aria-label="Global Reserve — open section"
+           style="width:671px; height:1281px; transform:matrix3d(0.429320632, 0.142842734, 0, 0.000236484, 0.01505603, 0.498398497, 0, 0.000025825, 0, 0, 1, 0, 387.436928679, 184.553347799, 0, 1);">
+        <div class="arch-lift"><img class="arch-image" src="cropped/2.png" alt="" draggable="false"></div>
+      </div>
 
-      <img class="arch" id="arch-3" src="cropped/3.png"
-           style="width:671px; height:1275px; transform:matrix3d(0.378218622, 0.135813917, 0, 0.000225314, 0.02171349, 0.419743468, 0, 0.000028951, 0, 0, 1, 0, 609.604398924, 258.829241393, 0, 1);" />
+      <div class="arch arch-interactive" id="arch-3" data-section="moveMoney"
+           tabindex="0" role="button" aria-label="Move Money — open section"
+           style="width:671px; height:1275px; transform:matrix3d(0.378218622, 0.135813917, 0, 0.000225314, 0.02171349, 0.419743468, 0, 0.000028951, 0, 0, 1, 0, 609.604398924, 258.829241393, 0, 1);">
+        <div class="arch-lift"><img class="arch-image" src="cropped/3.png" alt="" draggable="false"></div>
+      </div>
 
-      <img class="arch" id="arch-4" src="cropped/4.png"
-           style="width:705px; height:1279px; transform:matrix3d(-0.130209163, -0.109345417, 0, -0.000174561, -0.03111486, 0.329101717, 0, -0.000017402, 0, 0, 1, 0, 1768.354189771, 309.096975588, 0, 1);" />
+      <div class="arch arch-interactive" id="arch-4" data-section="globalConnections"
+           tabindex="0" role="button" aria-label="Global Connections — open section"
+           style="width:705px; height:1279px; transform:matrix3d(-0.130209163, -0.109345417, 0, -0.000174561, -0.03111486, 0.329101717, 0, -0.000017402, 0, 0, 1, 0, 1768.354189771, 309.096975588, 0, 1);">
+        <div class="arch-lift"><img class="arch-image" src="cropped/4.png" alt="" draggable="false"></div>
+      </div>
 
-      <img class="arch" id="arch-5" src="cropped/5.png"
-           style="width:671px; height:1281px; transform:matrix3d(-0.148304757, -0.119529077, 0, -0.000193822, -0.034590741, 0.391461002, 0, -0.000017639, 0, 0, 1, 0, 1935.967815346, 249.843417858, 0, 1);" />
+      <div class="arch arch-interactive" id="arch-5" data-section="globalDream"
+           tabindex="0" role="button" aria-label="Global Dream — open section"
+           style="width:671px; height:1281px; transform:matrix3d(-0.148304757, -0.119529077, 0, -0.000193822, -0.034590741, 0.391461002, 0, -0.000017639, 0, 0, 1, 0, 1935.967815346, 249.843417858, 0, 1);">
+        <div class="arch-lift"><img class="arch-image" src="cropped/5.png" alt="" draggable="false"></div>
+      </div>
 
-      <img class="arch" id="arch-6" src="cropped/6.png"
-           style="width:671px; height:1280px; transform:matrix3d(-0.232664391, -0.150683474, 0, -0.000247385, -0.026821274, 0.479096839, 0, -0.000012236, 0, 0, 1, 0, 2158.562786455, 171.999000076, 0, 1);" />
+      <div class="arch arch-interactive" id="arch-6" data-section="recordLibrary"
+           tabindex="0" role="button" aria-label="Record Library — open section"
+           style="width:671px; height:1280px; transform:matrix3d(-0.232664391, -0.150683474, 0, -0.000247385, -0.026821274, 0.479096839, 0, -0.000012236, 0, 0, 1, 0, 2158.562786455, 171.999000076, 0, 1);">
+        <div class="arch-lift"><img class="arch-image" src="cropped/6.png" alt="" draggable="false"></div>
+      </div>
 
       <svg id="guideSvg" viewBox="0 0 2546 900">
         <g id="guideGroup"></g>
       </svg>
     </div>
+    </div>
   </div>
 </div>
+
+<!-- Modal: прямой потомок body — вне .viewport-outer/#stage-holder/
+     #scene-parallax/.stage, чтобы не наследовать cover-масштаб/
+     translateX/rotateY и не обрезаться overflow:hidden сцены. -->
+<div id="modal-overlay" aria-hidden="true">
+  <div id="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-desc">
+    <h2 id="modal-title"></h2>
+    <p id="modal-desc"></p>
+    <button id="modal-close" type="button">Close</button>
+  </div>
+</div>
+
+<!-- Кастомный курсор: тоже прямой потомок body, вне трансформированной сцены. -->
+<div class="cursor-dot" aria-hidden="true"></div>
+<div class="cursor-ring" aria-hidden="true"></div>
 
 <script>
   const CORNERS = {
@@ -139,24 +366,394 @@
     g.appendChild(textEl);
   });
 
-  const btnGuides = document.getElementById('btnGuides');
-  const btnPanels = document.getElementById('btnPanels');
-  const zRange = document.getElementById('zRange');
-  const zVal = document.getElementById('zVal');
   const holder = document.getElementById('stage-holder');
 
-  btnGuides.onclick = () => { document.body.classList.toggle('show-guides'); btnGuides.classList.toggle('active'); };
-  btnPanels.onclick = () => { document.body.classList.toggle('show-panels'); btnPanels.classList.toggle('active'); };
+  // Служебная панель (кнопки показа зон/шаблона, индикатор масштаба) убрана
+  // из интерфейса; сами CSS-классы .show-guides/.show-panels и #guideSvg
+  // остаются рабочими и переключаемыми вручную через консоль
+  // (document.body.classList.toggle('show-guides')), просто без UI-кнопок.
 
-  function applyZoom(){
-    const k = zRange.value/100;
-    holder.style.transform = `scale(${k})`;
-    holder.style.width = (2546*k)+'px';
-    holder.style.height = (900*k)+'px';
-    zVal.textContent = Math.round(k*100)+'%';
-  }
-  zRange.oninput = applyZoom;
-  applyZoom();
+  // ---------------------------------------------------------------------
+  // Mouse-parallax общего контейнера сцены (#scene-parallax) + авто
+  // cover-масштаб #stage-holder. Принцип движения — из референса
+  // Glonari-Global-Scene-v1 (main.js): нормализация мыши в -1..1
+  // относительно видимой области, requestAnimationFrame с кадронезависимым
+  // экспоненциальным сглаживанием (TAU), безопасная амплитуда из реального
+  // избытка ширины сцены над видимой областью, возврат в центр при уходе
+  // мыши/потере фокуса, отключение при touch и prefers-reduced-motion.
+  // Один общий уровень движения для всей сцены (фон + все арки как единый
+  // объект) — отдельного parallax/поворота для арок нет.
+  (() => {
+    const STAGE_WIDTH = 2546;
+    const STAGE_HEIGHT = 900;
+    const BLEED = 1.05;          // запас cover-масштаба под поворот, диапазон 1.04–1.07
+    const TAU = 0.6;             // постоянная времени сглаживания (сек)
+    const MAX_ROTATE_DEG = 4.5;  // максимальный угол поворота сцены в каждую сторону
+    const PERSPECTIVE_PX = 2500; // держит поворот "камерой", а не поворотом плоской карточки
+    const STOP_THRESHOLD = 0.0005; // нормализованные единицы (-1..1)
+
+    const sceneViewport = document.querySelector('.viewport-outer');
+    const parallax = document.getElementById('scene-parallax');
+    if (!sceneViewport || !holder || !parallax) return;
+
+    const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+
+    function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+
+    // rotateY(MAX_ROTATE_DEG) в перспективной проекции подтягивает дальний
+    // (по ходу поворота) край плоскости внутрь — этот "усадочный" запас
+    // считается один раз аналитически (в локальных координатах сцены,
+    // т.е. до масштабирования #stage-holder) и вычитается из амплитуды
+    // движения, чтобы на максимуме угла у дальнего края не появлялся зазор.
+    function computeRotationShrinkLocal() {
+      const halfWidth = STAGE_WIDTH / 2;
+      const theta = MAX_ROTATE_DEG * Math.PI / 180;
+      const zShift = halfWidth * Math.sin(theta);
+      const trailingFactor = PERSPECTIVE_PX / (PERSPECTIVE_PX + zShift);
+      const projectedHalf = halfWidth * Math.cos(theta) * trailingFactor;
+      return Math.max(0, halfWidth - projectedHalf);
+    }
+    const ROTATION_SHRINK_LOCAL = computeRotationShrinkLocal();
+
+    let renderScale = 1;
+    let maxTravelX = 0; // безопасная амплитуда в локальных координатах #scene-parallax (0..STAGE_WIDTH)
+
+    function layout() {
+      const vw = sceneViewport.clientWidth;
+      const vh = sceneViewport.clientHeight;
+      if (vw === 0 || vh === 0) return;
+
+      const coverScale = Math.max(vw / STAGE_WIDTH, vh / STAGE_HEIGHT);
+      renderScale = coverScale * BLEED;
+      holder.style.transform = `translate(-50%, -50%) scale(${renderScale})`;
+
+      // Реальный избыток ширины отрендеренной сцены над видимой областью,
+      // переведённый в локальные координаты сцены (внутри scale(renderScale)).
+      const halfOverflowLocal = Math.max(0, (STAGE_WIDTH - vw / renderScale) / 2);
+      maxTravelX = Math.max(0, halfOverflowLocal - ROTATION_SHRINK_LOCAL);
+
+      target.nx = clamp(target.nx, -1, 1);
+    }
+
+    const target = { nx: 0 };
+    const smooth = { nx: 0 };
+    let rafId = null;
+    let lastTime = null;
+
+    function apply() {
+      const tx = (-smooth.nx * maxTravelX).toFixed(2);
+      const rot = (-smooth.nx * MAX_ROTATE_DEG).toFixed(3);
+      parallax.style.transform =
+        `perspective(${PERSPECTIVE_PX}px) translate3d(${tx}px, 0, 0) rotateY(${rot}deg)`;
+    }
+
+    function startLoop() {
+      if (rafId !== null) return;
+      lastTime = null;
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function stopLoop() {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      lastTime = null;
+    }
+
+    function tick(now) {
+      if (lastTime === null) lastTime = now;
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      const ease = 1 - Math.exp(-dt / TAU);
+      smooth.nx += (target.nx - smooth.nx) * ease;
+
+      if (Math.abs(target.nx - smooth.nx) < STOP_THRESHOLD) {
+        smooth.nx = target.nx;
+        apply();
+        stopLoop();
+        return;
+      }
+
+      apply();
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function setTargetFromPointer(clientX, clientY) {
+      const rect = sceneViewport.getBoundingClientRect();
+      if (rect.width === 0) return;
+      target.nx = clamp(((clientX - rect.left) / rect.width - 0.5) * 2, -1, 1);
+      startLoop();
+    }
+
+    function resetTarget() {
+      target.nx = 0;
+      startLoop();
+    }
+
+    function handlePointerMove(e) {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      setTargetFromPointer(e.clientX, e.clientY);
+    }
+
+    function handlePointerLeave(e) {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      resetTarget();
+    }
+
+    function enableMovement() {
+      sceneViewport.addEventListener('pointermove', handlePointerMove);
+      sceneViewport.addEventListener('pointerleave', handlePointerLeave);
+      window.addEventListener('blur', resetTarget);
+    }
+
+    function disableMovement() {
+      sceneViewport.removeEventListener('pointermove', handlePointerMove);
+      sceneViewport.removeEventListener('pointerleave', handlePointerLeave);
+      window.removeEventListener('blur', resetTarget);
+      stopLoop();
+      target.nx = 0;
+      smooth.nx = 0;
+      apply();
+    }
+
+    function applyMotionPreference() {
+      if (reduceMotionQuery.matches || !finePointerQuery.matches) {
+        disableMovement();
+      } else {
+        enableMovement();
+      }
+    }
+
+    layout();
+    apply();
+    applyMotionPreference();
+
+    window.addEventListener('resize', () => { layout(); });
+    reduceMotionQuery.addEventListener('change', applyMotionPreference);
+    finePointerQuery.addEventListener('change', applyMotionPreference);
+  })();
+
+  // ---------------------------------------------------------------------
+  // Интерактивность арок: hover/focus-свечение, modal, кастомный курсор.
+  // Полностью независимый блок — не читает и не трогает переменные/DOM
+  // parallax-блока выше (кроме общих CSS-классов на самих арках, которые
+  // тот блок не использует). Принципы поведения адаптированы из
+  // Glonari-Global-Scene-v1 (main.js/section-modal.js/styles.css):
+  // единое "elevated" состояние (hover || focus) на арку, курсор реагирует
+  // на то же состояние, focus-trap + Escape в модалке. Названия и тексты
+  // секций — свои, не скопированы из референса.
+  (() => {
+    const ARCH_CONTENT = {
+      experience: { title: 'Experience', description: 'Content for this section will be added later.' },
+      globalReserve: { title: 'Global Reserve', description: 'Content for this section will be added later.' },
+      moveMoney: { title: 'Move Money', description: 'Content for this section will be added later.' },
+      globalConnections: { title: 'Global Connections', description: 'Content for this section will be added later.' },
+      globalDream: { title: 'Global Dream', description: 'Content for this section will be added later.' },
+      recordLibrary: { title: 'Record Library', description: 'Content for this section will be added later.' },
+    };
+
+    const arches = Array.from(document.querySelectorAll('.arch-interactive'));
+    const overlay = document.getElementById('modal-overlay');
+    const card = document.getElementById('modal-card');
+    const titleEl = document.getElementById('modal-title');
+    const descEl = document.getElementById('modal-desc');
+    const closeBtn = document.getElementById('modal-close');
+    const cursorDot = document.querySelector('.cursor-dot');
+    const cursorRing = document.querySelector('.cursor-ring');
+    if (!arches.length || !overlay || !card || !titleEl || !descEl || !closeBtn) return;
+
+    const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+
+    // ---------- Единое elevated-состояние (мышь ИЛИ клавиатурный фокус) ----------
+    let hoveredArch = null;
+    let focusedArch = null;
+    let elevatedArch = null;
+
+    function applyElevated(arch) {
+      if (arch === elevatedArch) return;
+      if (elevatedArch) elevatedArch.classList.remove('is-hovered');
+      if (arch) arch.classList.add('is-hovered');
+      elevatedArch = arch;
+      if (cursorDot) cursorDot.classList.toggle('hover', arch !== null);
+    }
+
+    function recomputeElevated() {
+      applyElevated(hoveredArch || focusedArch);
+    }
+
+    function clearAllHover() {
+      hoveredArch = null;
+      focusedArch = null;
+      recomputeElevated();
+    }
+
+    // ---------- Modal ----------
+    let isOpen = false;
+    let lastFocusedEl = null;
+
+    function getFocusable() {
+      return Array.from(
+        card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      ).filter((el) => el.offsetParent !== null && !el.disabled);
+    }
+
+    function openModal(sectionKey, triggerEl) {
+      const content = ARCH_CONTENT[sectionKey];
+      if (!content) return;
+      titleEl.textContent = content.title;
+      descEl.textContent = content.description;
+      isOpen = true;
+      lastFocusedEl = triggerEl || null;
+      // Модалка визуально закрывает арку — снимаем hover/focus-состояние,
+      // чтобы свечение/курсор не оставались "включёнными" под оверлеем.
+      clearAllHover();
+      overlay.classList.add('active');
+      overlay.setAttribute('aria-hidden', 'false');
+      closeBtn.focus();
+    }
+
+    function closeModal() {
+      if (!isOpen) return;
+      isOpen = false;
+      overlay.classList.remove('active');
+      overlay.setAttribute('aria-hidden', 'true');
+      if (lastFocusedEl) lastFocusedEl.focus();
+      lastFocusedEl = null;
+    }
+
+    closeBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeModal();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (!isOpen) return;
+
+      if (event.key === 'Escape') {
+        closeModal();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeInside = card.contains(document.activeElement);
+      if (event.shiftKey) {
+        if (!activeInside || document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (!activeInside || document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    // Safety net: если фокус оказался вне карточки каким-то другим путём,
+    // пока модалка открыта, возвращаем его внутрь.
+    document.addEventListener('focusin', (event) => {
+      if (!isOpen || card.contains(event.target)) return;
+      const target = getFocusable()[0] || closeBtn;
+      if (target) target.focus();
+    });
+
+    // ---------- Арки: hover, focus, click, keyboard ----------
+    for (const arch of arches) {
+      const sectionKey = arch.dataset.section;
+
+      arch.addEventListener('pointerenter', (event) => {
+        if (event.pointerType && event.pointerType !== 'mouse') return;
+        if (isOpen) return;
+        hoveredArch = arch;
+        recomputeElevated();
+      });
+      arch.addEventListener('pointerleave', (event) => {
+        if (event.pointerType && event.pointerType !== 'mouse') return;
+        if (hoveredArch !== arch) return;
+        hoveredArch = null;
+        recomputeElevated();
+      });
+
+      arch.addEventListener('focus', () => {
+        focusedArch = arch;
+        recomputeElevated();
+      });
+      arch.addEventListener('blur', () => {
+        if (focusedArch !== arch) return;
+        focusedArch = null;
+        recomputeElevated();
+      });
+
+      arch.addEventListener('click', () => {
+        if (isOpen) return;
+        openModal(sectionKey, arch);
+      });
+
+      arch.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+        event.preventDefault(); // Space не должен прокручивать страницу
+        if (isOpen) return;
+        openModal(sectionKey, arch);
+      });
+    }
+
+    // Мышь ушла со сцены целиком (за пределы .viewport-outer) — снимаем
+    // hover с арки, как и при уходе с самой арки.
+    const sceneViewport = document.querySelector('.viewport-outer');
+    if (sceneViewport) {
+      sceneViewport.addEventListener('pointerleave', (event) => {
+        if (event.pointerType && event.pointerType !== 'mouse') return;
+        hoveredArch = null;
+        recomputeElevated();
+      });
+    }
+    window.addEventListener('blur', () => {
+      hoveredArch = null;
+      focusedArch = null;
+      recomputeElevated();
+    });
+
+    // ---------- Кастомный курсор (только fine-pointer устройства) ----------
+    // html.cursor-ready включается только после успешной инициализации —
+    // если этот скрипт не выполнится, системный курсор никогда не
+    // скрывается (см. CSS: cursor:none завязан на html.cursor-ready).
+    if (finePointerQuery.matches && cursorDot && cursorRing) {
+      let mx = window.innerWidth / 2;
+      let my = window.innerHeight / 2;
+      let rx = mx;
+      let ry = my;
+
+      cursorDot.style.left = `${mx}px`;
+      cursorDot.style.top = `${my}px`;
+      cursorRing.style.left = `${rx}px`;
+      cursorRing.style.top = `${ry}px`;
+
+      window.addEventListener('pointermove', (event) => {
+        if (event.pointerType !== 'mouse') return;
+        mx = event.clientX;
+        my = event.clientY;
+        cursorDot.style.left = `${mx}px`;
+        cursorDot.style.top = `${my}px`;
+      });
+
+      function ringLoop() {
+        rx += (mx - rx) * 0.15;
+        ry += (my - ry) * 0.15;
+        cursorRing.style.left = `${rx}px`;
+        cursorRing.style.top = `${ry}px`;
+        requestAnimationFrame(ringLoop);
+      }
+      ringLoop();
+
+      document.documentElement.classList.add('cursor-ready');
+    }
+  })();
 </script>
 
 </body>
