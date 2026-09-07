@@ -52,8 +52,46 @@
     height:900px;
     box-shadow:0 0 0 1px #333;
   }
-  .stage img.bg{
-    position:absolute; top:0; left:0; width:2546px; height:900px; display:block;
+  /* === двухслойный параллакс фона (стены+купол / пол+предметы) ===
+     Оба слоя выровнены по высоте сцены (900px) и центрированы по X;
+     JS двигает их через translateX(calc(-50% + offset)) с разной
+     амплитудой (offset для wall меньше, чем для subjects), используя
+     то же самое сглаженное smooth.nx, что и общий наклон
+     #scene-parallax ниже -- см. блок "Mouse-parallax" в <script>. */
+  .bg-layer{
+    position:absolute;
+    top:0; left:50%;
+    height:900px;
+    pointer-events:none;
+    will-change:transform;
+  }
+  .bg-layer img{
+    display:block;
+    width:100%; height:100%;
+    pointer-events:none;
+    -webkit-user-drag:none;
+    user-select:none;
+  }
+  /* пол+предметы: нижний слой по z-index, самый быстрый (шире всех) */
+  #subjectsLayer{ width:4437px; z-index:1; }
+  /* стены+купол: верхний слой по z-index, самый медленный */
+  #wallLayer{ width:3667.62px; z-index:2; }
+  /* .wall-art -- нативный холст wall.png (3688x905): арки прописаны
+     через matrix3d именно в этих координатах (см. arch_transforms_new.json),
+     поэтому масштабируется единым transform:scale(900/905), а не через
+     width/height, чтобы координаты арок не пересчитывать. */
+  .wall-art{
+    position:absolute;
+    top:0; left:0;
+    width:3688px; height:905px;
+    transform-origin:0 0;
+    transform:scale(0.994475138);
+  }
+  .wall-art > img{
+    display:block; width:3688px; height:905px;
+    pointer-events:none;
+    -webkit-user-drag:none;
+    user-select:none;
   }
   .arch{
     position:absolute;
@@ -84,12 +122,18 @@
     transform-origin:50% 100%;
     transition:transform 0.25s ease;
     will-change:transform;
-    /* Реальная кликабельная/hover-область: clip-path и scale(1.03) теперь
-       на одном и том же элементе, поэтому маска увеличивается вместе с
-       изображением и не обрезает надпись при hover (см. #arch-N .arch-lift
-       ниже). Events на .arch-lift всплывают к обработчикам на .arch. */
-    pointer-events:auto;
-    cursor:pointer;
+    /* ВАЖНО: .arch-lift сам по себе больше НЕ несёт clip-path и не является
+       целью указателя. clip-path — это не только "маска для хит-тестинга":
+       он ОБРЕЗАЕТ реальные видимые пиксели любого элемента, на котором
+       висит. Раньше clip-path висел прямо здесь, на контейнере картинки,
+       и поэтому обрезал часть надписи (у длинных заголовков вроде "Global
+       Connections") и заставлял hover-свечение (filter:drop-shadow на
+       .arch) обводить не силуэт арки, а срезанный клипом восьмиугольник —
+       отсюда "скруглённые"/срезанные углы при наведении. Клик/hover-маска
+       вынесена в отдельный невидимый .arch-hit ниже, поверх изображения,
+       но того же transform-контекста (масштабируется вместе с .arch-lift
+       при hover). */
+    pointer-events:none;
   }
   .arch.is-hovered .arch-lift{
     transform:scale(1.03);
@@ -101,6 +145,19 @@
     pointer-events:none;
     -webkit-user-drag:none;
     user-select:none;
+  }
+  /* Реальная кликабельная/hover-область: невидимый слой поверх картинки,
+     той же формы/размера, но БЕЗ визуального содержимого — clip-path на
+     нём сужает только хит-тестинг, никогда не трогая пиксели .arch-image.
+     Лежит внутри .arch-lift, поэтому увеличивается вместе с картинкой при
+     hover (scale(1.03)), как и было задумано. */
+  .arch-hit{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    pointer-events:auto;
+    cursor:pointer;
   }
   @media (prefers-reduced-motion: reduce){
     .arch, .arch-lift{ transition:none; }
@@ -114,19 +171,17 @@
      (реальный canvas-alpha-hit-test в браузере недоступен: при открытии
      файла как file:// canvas помечается tainted и getImageData бросает
      SecurityError — так же, как в эталонном main.js). Каждый вырез —
-     заведомо (с запасом ~28%) меньше подтверждённо прозрачной области,
-     поэтому видимые пиксели арки не обрезаются; матрицы/картинки не
-     менялись. Висит на .arch-lift (не на .arch), чтобы маска
-     масштабировалась вместе с scale(1.03) при hover и не обрезала
-     увеличенную надпись/арку неподвижным контуром. */
-  #arch-1 .arch-lift{ clip-path: polygon(20.42% 0%, 85.25% 0%, 100% 7.75%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.19%, 0% 10.72%); }
-  #arch-2 .arch-lift{ clip-path: polygon(17.14% 0%, 93.29% 0%, 100% 3.51%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.21%, 0% 8.98%); }
-  #arch-3 .arch-lift{ clip-path: polygon(19.23% 0%, 90.61% 0%, 100% 4.94%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.18%, 0% 10.12%); }
-  #arch-4 .arch-lift{ clip-path: polygon(9.93% 0%, 97.16% 0%, 100% 1.56%, 100% 97.19%, 94.89% 100%, 12.34% 100%, 0% 93.20%, 0% 5.47%); }
-  #arch-5 .arch-lift{ clip-path: polygon(19.08% 0%, 91.65% 0%, 100% 4.37%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.21%, 0% 9.99%); }
-  #arch-6 .arch-lift{ clip-path: polygon(15.05% 0%, 95.08% 0%, 100% 2.58%, 100% 99.14%, 98.36% 100%, 12.97% 100%, 0% 93.20%, 0% 7.89%); }
+     заведомо (с запасом) меньше подтверждённо прозрачной области. Висит на
+     .arch-hit (не на .arch-lift/.arch-image), поэтому не обрезает видимые
+     пиксели картинки — сужает только зону наведения/клика. */
+  #arch-1 .arch-hit{ clip-path: polygon(26.31% 0%, 74.54% 0%, 100% 26.84%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.21%); }
+  #arch-2 .arch-hit{ clip-path: polygon(17.55% 0%, 83.30% 0%, 100% 27.01%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.39%); }
+  #arch-3 .arch-hit{ clip-path: polygon(23.20% 0%, 78.07% 0%, 100% 26.66%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.04%); }
+  #arch-4 .arch-hit{ clip-path: polygon(9.21% 0%, 91.77% 0%, 100% 26.89%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.27%); }
+  #arch-5 .arch-hit{ clip-path: polygon(20.23% 0%, 81.32% 0%, 100% 27.01%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.39%); }
+  #arch-6 .arch-hit{ clip-path: polygon(16.98% 0%, 84.43% 0%, 100% 27.01%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.39%); }
 
-  #guideSvg{ position:absolute; top:0; left:0; width:2546px; height:900px; pointer-events:none; display:none; }
+  #guideSvg{ position:absolute; top:0; left:0; width:3688px; height:905px; pointer-events:none; display:none; }
   body.show-guides #guideSvg{ display:block; }
   #guideSvg polygon{ fill:rgba(0,201,122,.12); stroke:#00c97a; stroke-width:2.5; }
   #guideSvg text{ fill:#04150c; font-size:16px; font-weight:700; }
@@ -277,47 +332,55 @@
   <div id="stage-holder">
     <div id="scene-parallax">
     <div class="stage" id="stage">
-      <img class="bg" src="BACKGROUND.png" alt="background" style="pointer-events:none;">
-
-      <div class="arch arch-interactive" id="arch-1" data-section="experience"
-           tabindex="0" role="button" aria-label="Experience — open section"
-           style="width:671px; height:1278px; transform:matrix3d(0.510851791, 0.187288676, 0, 0.000310079, 0.005280845, 0.61989375, 0, 0.000015045, 0, 0, 1, 0, 81.248488184, 67.619345268, 0, 1);">
-        <div class="arch-lift"><img class="arch-image" src="cropped/1.png" alt="" draggable="false"></div>
+      <div id="subjectsLayer" class="bg-layer">
+        <img src="layers/subjects.png" alt="" style="pointer-events:none;">
       </div>
 
-      <div class="arch arch-interactive" id="arch-2" data-section="globalReserve"
-           tabindex="0" role="button" aria-label="Global Reserve — open section"
-           style="width:671px; height:1281px; transform:matrix3d(0.429320632, 0.142842734, 0, 0.000236484, 0.01505603, 0.498398497, 0, 0.000025825, 0, 0, 1, 0, 387.436928679, 184.553347799, 0, 1);">
-        <div class="arch-lift"><img class="arch-image" src="cropped/2.png" alt="" draggable="false"></div>
-      </div>
+      <div id="wallLayer" class="bg-layer">
+        <div class="wall-art">
+          <img src="layers/wall.png" alt="background wall">
 
-      <div class="arch arch-interactive" id="arch-3" data-section="moveMoney"
-           tabindex="0" role="button" aria-label="Move Money — open section"
-           style="width:671px; height:1275px; transform:matrix3d(0.378218622, 0.135813917, 0, 0.000225314, 0.02171349, 0.419743468, 0, 0.000028951, 0, 0, 1, 0, 609.604398924, 258.829241393, 0, 1);">
-        <div class="arch-lift"><img class="arch-image" src="cropped/3.png" alt="" draggable="false"></div>
-      </div>
+          <div class="arch arch-interactive" id="arch-1" data-section="experience"
+               tabindex="0" role="button" aria-label="Experience — open section"
+               style="width:708px; height:1288px; transform:matrix3d(0.593087176, 0.094243453, 0, 0.000179375, 0, 0.449534161, 0, 0, 0, 0, 1, 0, 162, 178, 0, 1);">
+            <div class="arch-lift"><img class="arch-image" src="cropped-new/1.png" alt="" draggable="false"><div class="arch-hit"></div></div>
+          </div>
 
-      <div class="arch arch-interactive" id="arch-4" data-section="globalConnections"
-           tabindex="0" role="button" aria-label="Global Connections — open section"
-           style="width:705px; height:1279px; transform:matrix3d(-0.130209163, -0.109345417, 0, -0.000174561, -0.03111486, 0.329101717, 0, -0.000017402, 0, 0, 1, 0, 1768.354189771, 309.096975588, 0, 1);">
-        <div class="arch-lift"><img class="arch-image" src="cropped/4.png" alt="" draggable="false"></div>
-      </div>
+          <div class="arch arch-interactive" id="arch-2" data-section="globalReserve"
+               tabindex="0" role="button" aria-label="Global Reserve — open section"
+               style="width:708px; height:1291px; transform:matrix3d(0.63025894, 0.106495922, 0, 0.000199312, 0, 0.377226956, 0, 0, 0, 0, 1, 0, 646, 234, 0, 1);">
+            <div class="arch-lift"><img class="arch-image" src="cropped-new/2.png" alt="" draggable="false"><div class="arch-hit"></div></div>
+          </div>
 
-      <div class="arch arch-interactive" id="arch-5" data-section="globalDream"
-           tabindex="0" role="button" aria-label="Global Dream — open section"
-           style="width:671px; height:1281px; transform:matrix3d(-0.148304757, -0.119529077, 0, -0.000193822, -0.034590741, 0.391461002, 0, -0.000017639, 0, 0, 1, 0, 1935.967815346, 249.843417858, 0, 1);">
-        <div class="arch-lift"><img class="arch-image" src="cropped/5.png" alt="" draggable="false"></div>
-      </div>
+          <div class="arch arch-interactive" id="arch-3" data-section="moveMoney"
+               tabindex="0" role="button" aria-label="Move Money — open section"
+               style="width:708px; height:1285px; transform:matrix3d(0.620949567, 0.10249015, 0, 0.000185185, 0, 0.316731518, 0, 0, 0, 0, 1, 0, 1067, 285, 0, 1);">
+            <div class="arch-lift"><img class="arch-image" src="cropped-new/3.png" alt="" draggable="false"><div class="arch-hit"></div></div>
+          </div>
 
-      <div class="arch arch-interactive" id="arch-6" data-section="recordLibrary"
-           tabindex="0" role="button" aria-label="Record Library — open section"
-           style="width:671px; height:1280px; transform:matrix3d(-0.232664391, -0.150683474, 0, -0.000247385, -0.026821274, 0.479096839, 0, -0.000012236, 0, 0, 1, 0, 2158.562786455, 171.999000076, 0, 1);">
-        <div class="arch-lift"><img class="arch-image" src="cropped/6.png" alt="" draggable="false"></div>
-      </div>
+          <div class="arch arch-interactive" id="arch-4" data-section="globalConnections"
+               tabindex="0" role="button" aria-label="Global Connections — open section"
+               style="width:708px; height:1289px; transform:matrix3d(-0.046038301, -0.089661422, 0, -0.000160315, 0, 0.280062064, 0, 0, 0, 0, 1, 0, 2359, 316, 0, 1);">
+            <div class="arch-lift"><img class="arch-image" src="cropped-new/4.png" alt="" draggable="false"><div class="arch-hit"></div></div>
+          </div>
 
-      <svg id="guideSvg" viewBox="0 0 2546 900">
-        <g id="guideGroup"></g>
-      </svg>
+          <div class="arch arch-interactive" id="arch-5" data-section="globalDream"
+               tabindex="0" role="button" aria-label="Global Dream — open section"
+               style="width:708px; height:1291px; transform:matrix3d(-0.092242271, -0.093375275, 0, -0.000174756, 0, 0.330751356, 0, 0, 0, 0, 1, 0, 2734, 271, 0, 1);">
+            <div class="arch-lift"><img class="arch-image" src="cropped-new/5.png" alt="" draggable="false"><div class="arch-hit"></div></div>
+          </div>
+
+          <div class="arch arch-interactive" id="arch-6" data-section="recordLibrary"
+               tabindex="0" role="button" aria-label="Record Library — open section"
+               style="width:708px; height:1291px; transform:matrix3d(-0.061081101, -0.083663445, 0, -0.000159238, 0, 0.398140976, 0, 0, 0, 0, 1, 0, 3175, 217, 0, 1);">
+            <div class="arch-lift"><img class="arch-image" src="cropped-new/6.png" alt="" draggable="false"><div class="arch-hit"></div></div>
+          </div>
+
+          <svg id="guideSvg" viewBox="0 0 3688 905">
+            <g id="guideGroup"></g>
+          </svg>
+        </div>
+      </div>
     </div>
     </div>
   </div>
@@ -340,12 +403,12 @@
 
 <script>
   const CORNERS = {
-    1: {TL:[132,85], TR:[351,160], BR:[351,803], BL:[136,836], title:"1 · Experience"},
-    2: {TL:[423,195], TR:[583,242], BR:[583,771], BL:[428,792], title:"2 · Global Reserve"},
-    3: {TL:[635,267], TR:[750,304], BR:[750,745], BL:[639,762], title:"3 · Move Money"},
-    4: {TL:[1788,303], TR:[1904,267], BR:[1907,763], BL:[1788,749], title:"4 · Global Connections"},
-    5: {TL:[1961,242], TR:[2111,195], BR:[2115,792], BL:[1961,772], title:"5 · Global Dream"},
-    6: {TL:[2192,160], TR:[2401,85], BR:[2405,836], BL:[2192,803], title:"6 · Record Library"},
+    1: {TL:[162,178], TR:[515,217], BR:[515,731], BL:[162,757], title:"1 · Experience"},
+    2: {TL:[646,234], TR:[956,271], BR:[956,698], BL:[646,721], title:"2 · Global Reserve"},
+    3: {TL:[1067,285], TR:[1331,316], BR:[1331,676], BL:[1067,692], title:"3 · Move Money"},
+    4: {TL:[2359,316], TR:[2623,285], BR:[2623,692], BL:[2359,677], title:"4 · Global Connections"},
+    5: {TL:[2734,271], TR:[3044,234], BR:[3044,721], BL:[2734,698], title:"5 · Global Dream"},
+    6: {TL:[3175,217], TR:[3528,178], BR:[3528,757], BL:[3175,731], title:"6 · Record Library"},
   };
 
   const svgNS = "http://www.w3.org/2000/svg";
@@ -394,7 +457,26 @@
 
     const sceneViewport = document.querySelector('.viewport-outer');
     const parallax = document.getElementById('scene-parallax');
+    const wallLayer = document.getElementById('wallLayer');
+    const subjectsLayer = document.getElementById('subjectsLayer');
     if (!sceneViewport || !holder || !parallax) return;
+
+    // ---------------------------------------------------------------------
+    // Разноскоростной параллакс двух фоновых слоёв (стены+купол / пол+
+    // предметы), ДОПОЛНИТЕЛЬНО к общему наклону #scene-parallax выше.
+    // Амплитуда каждого слоя -- фиксированная константа в локальных
+    // координатах сцены (2546px), а не от реального вьюпорта: слои сами
+    // уже находятся внутри системы, которую целиком масштабирует
+    // cover-scale #stage-holder. Логика и сглаживание -- как в общем
+    // наклоне сцены (используем то же smooth.nx), коэффициенты -- из
+    // реального превышения отрендеренной ширины каждого слоя (при
+    // выравнивании по высоте сцены, 900px) над локальной шириной сцены.
+    const WALL_W = 3688, WALL_H = 905;     // layers/wall.png
+    const SUBJ_W = 4437, SUBJ_H = 900;     // layers/subjects.png
+    const wallRenderedW = STAGE_HEIGHT * (WALL_W / WALL_H);
+    const subjRenderedW = STAGE_HEIGHT * (SUBJ_W / SUBJ_H);
+    const RANGE_WALL = Math.max(0, (wallRenderedW - STAGE_WIDTH) / 2);
+    const RANGE_SUBJ = Math.max(0, (subjRenderedW - STAGE_WIDTH) / 2);
 
     const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
@@ -446,6 +528,11 @@
       const rot = (-smooth.nx * MAX_ROTATE_DEG).toFixed(3);
       parallax.style.transform =
         `perspective(${PERSPECTIVE_PX}px) translate3d(${tx}px, 0, 0) rotateY(${rot}deg)`;
+
+      const txWall = (-smooth.nx * RANGE_WALL).toFixed(2);
+      const txSubj = (-smooth.nx * RANGE_SUBJ).toFixed(2);
+      if (wallLayer) wallLayer.style.transform = `translateX(calc(-50% + ${txWall}px))`;
+      if (subjectsLayer) subjectsLayer.style.transform = `translateX(calc(-50% + ${txSubj}px))`;
     }
 
     function startLoop() {
