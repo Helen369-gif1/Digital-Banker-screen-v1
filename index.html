@@ -74,8 +74,12 @@
   }
   /* пол+предметы: нижний слой по z-index, самый быстрый (шире всех) */
   #subjectsLayer{ width:4437px; z-index:1; }
-  /* стены+купол: верхний слой по z-index, самый медленный */
+  /* стены+купол: средний слой по z-index, самый медленный */
   #wallLayer{ width:3667.62px; z-index:2; }
+  /* Gia: физически ближе к камере, чем стена/арки и предметы -- поэтому
+     самый верхний слой по z-index, хотя едет один в один с предметами
+     (та же ширина/амплитуда, что и #subjectsLayer, см. JS-параллакс). */
+  #giaLayer{ width:4437px; z-index:3; }
   /* .wall-art -- нативный холст wall.png (3688x905): арки прописаны
      через matrix3d именно в этих координатах (см. arch_transforms_new.json),
      поэтому масштабируется единым transform:scale(900/905), а не через
@@ -336,9 +340,28 @@
         <img src="layers/subjects.png" alt="" style="pointer-events:none;">
       </div>
 
+      <div id="giaLayer" class="bg-layer">
+        <img src="layers/Gia.png" alt="" style="pointer-events:none;">
+      </div>
+
       <div id="wallLayer" class="bg-layer">
         <div class="wall-art">
           <img src="layers/wall.png" alt="background wall">
+
+          <!-- "Экран" с водой на стене: видео внутри .wall-art, чтобы
+               унаследовать тот же scale()/translateX(), что и сама стена
+               (RANGE_WALL) -- без отдельного JS. Маска (пересечение mask0+
+               mask1 из effects/water-mask.svg) вырезает овальную форму
+               экрана; вне неё контейнер полностью прозрачен и не мешает
+               аркам ни визуально (x:1417-2277 лежит между arch-3 и arch-4,
+               не пересекается ни с одной аркой), ни по кликам
+               (pointer-events:none, наследуется видео). -->
+          <div class="wall-screen-mask" style="position:absolute; top:0; left:0; width:3688px; height:900px; pointer-events:none; mask-image:url('effects/water-mask.svg'); -webkit-mask-image:url('effects/water-mask.svg'); mask-size:3688px 900px; -webkit-mask-size:3688px 900px; mask-repeat:no-repeat; -webkit-mask-repeat:no-repeat;">
+            <video autoplay muted loop playsinline
+                   style="position:absolute; left:1417px; top:233px; width:860px; height:478px; object-fit:fill;">
+              <source src="effects/water.mp4" type="video/mp4">
+            </video>
+          </div>
 
           <div class="arch arch-interactive" id="arch-1" data-section="experience"
                tabindex="0" role="button" aria-label="Experience — open section"
@@ -459,6 +482,7 @@
     const parallax = document.getElementById('scene-parallax');
     const wallLayer = document.getElementById('wallLayer');
     const subjectsLayer = document.getElementById('subjectsLayer');
+    const giaLayer = document.getElementById('giaLayer');
     if (!sceneViewport || !holder || !parallax) return;
 
     // ---------------------------------------------------------------------
@@ -472,10 +496,12 @@
     // реального превышения отрендеренной ширины каждого слоя (при
     // выравнивании по высоте сцены, 900px) над локальной шириной сцены.
     const WALL_W = 3688, WALL_H = 905;     // layers/wall.png
-    const SUBJ_W = 4437, SUBJ_H = 900;     // layers/subjects.png
+    const SUBJ_W = 4437, SUBJ_H = 900;     // layers/subjects.png (тот же размер у layers/Gia.png)
     const wallRenderedW = STAGE_HEIGHT * (WALL_W / WALL_H);
     const subjRenderedW = STAGE_HEIGHT * (SUBJ_W / SUBJ_H);
     const RANGE_WALL = Math.max(0, (wallRenderedW - STAGE_WIDTH) / 2);
+    // RANGE_SUBJ используется и для #subjectsLayer, и для #giaLayer -- Gia
+    // сделана того же размера (4437x900), едет один в один с предметами.
     const RANGE_SUBJ = Math.max(0, (subjRenderedW - STAGE_WIDTH) / 2);
 
     const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -533,6 +559,7 @@
       const txSubj = (-smooth.nx * RANGE_SUBJ).toFixed(2);
       if (wallLayer) wallLayer.style.transform = `translateX(calc(-50% + ${txWall}px))`;
       if (subjectsLayer) subjectsLayer.style.transform = `translateX(calc(-50% + ${txSubj}px))`;
+      if (giaLayer) giaLayer.style.transform = `translateX(calc(-50% + ${txSubj}px))`;
     }
 
     function startLoop() {
