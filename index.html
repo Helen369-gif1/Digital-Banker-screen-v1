@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Арки — matrix3d corner-pin (заголовок + арка = единый объект)</title>
+<title>Digital Banker — арочный зал (CSS 3D)</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&display=swap" rel="stylesheet">
+
 <style>
   html,body{
     width:100%; height:100%; margin:0; padding:0; overflow:hidden;
@@ -11,102 +16,93 @@
     font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
   }
 
-  /* Сцена — единственное, что есть на странице: 100vw x 100vh от самого
-     верхнего края окна, без служебной панели/отступов над ней. */
+  /* ==========================================================
+     Десктоп: настоящая CSS 3D-сцена.
+     perspective держит камеру; .room -- единственный элемент,
+     который поворачивается (мышь по X -> rotateY всей комнаты).
+     Фоновые плоские слои (пол+предметы, Gia) лежат вне .room и
+     не участвуют в 3D-повороте -- как и раньше, это просто
+     плоские слои по краям сцены. Стена (wall.png) -- внутри
+     .room, тоже плоская, но крутится вместе с комнатой, чтобы не
+     "отрываться" визуально от арок.
+     ========================================================== */
   .viewport-outer{
     position:fixed;
     inset:0;
-    width:100vw;
-    height:100vh;
-    padding:0;
-    background:#0a0a0a;
     overflow:hidden;
+    background:#0a0a0a;
+    perspective:2500px; /* то же значение, что и раньше в JS-параллаксе */
   }
 
-  /* Центрирование и автоматический cover-масштаб — единственный источник
-     масштаба (renderScale, см. JS). Base-размер 2546x900 всегда
-     фиксирован в CSS; JS меняет только transform. */
-  #stage-holder{
-    position:absolute;
-    top:50%; left:50%;
-    width:2546px; height:900px;
-    transform-origin:50% 50%;
-  }
-
-  /* Общий контейнер mouse-parallax: единственный уровень, к которому
-     применяется движение мыши (translateX + rotateY всей сцены как
-     единого объекта). Сам по себе не несёт никакого transform по
-     умолчанию — в нейтральном положении (mouseX=0) JS ставит сюда
-     identity-эквивалентный transform, поэтому сцена не сдвигается. */
-  #scene-parallax{
-    position:relative;
-    width:2546px;
-    height:900px;
-    will-change:transform;
-  }
-
-  /* === структура и система координат — как в positioning_demo_standalone (1) === */
-  .stage{
-    position:relative;
-    width:2546px;
-    height:900px;
-    box-shadow:0 0 0 1px #333;
-  }
-  /* === двухслойный параллакс фона (стены+купол / пол+предметы) ===
-     Оба слоя выровнены по высоте сцены (900px) и центрированы по X;
-     JS двигает их через translateX(calc(-50% + offset)) с разной
-     амплитудой (offset для wall меньше, чем для subjects), используя
-     то же самое сглаженное smooth.nx, что и общий наклон
-     #scene-parallax ниже -- см. блок "Mouse-parallax" в <script>. */
-  .bg-layer{
+  .flat-layer{
     position:absolute;
     top:0; left:50%;
-    height:900px;
+    height:100%;
+    width:auto;
+    transform:translateX(-50%);
     pointer-events:none;
+    -webkit-user-drag:none;
+    user-select:none;
+    display:block;
+  }
+  .subjects-layer{ z-index:1; } /* пол+предметы -- позади комнаты */
+  .gia-layer{ z-index:3; }      /* Gia -- физически ближе камеры, поверх комнаты */
+
+  .room{
+    position:absolute;
+    inset:0;
+    z-index:2;
+    transform-style:preserve-3d;
     will-change:transform;
   }
-  .bg-layer img{
-    display:block;
-    width:100%; height:100%;
-    pointer-events:none;
-    -webkit-user-drag:none;
-    user-select:none;
-  }
-  /* пол+предметы: нижний слой по z-index, самый быстрый (шире всех) */
-  #subjectsLayer{ width:4437px; z-index:1; }
-  /* стены+купол: средний слой по z-index, самый медленный */
-  #wallLayer{ width:3667.62px; z-index:2; }
-  /* Gia: физически ближе к камере, чем стена/арки и предметы -- поэтому
-     самый верхний слой по z-index, хотя едет один в один с предметами
-     (та же ширина/амплитуда, что и #subjectsLayer, см. JS-параллакс). */
-  #giaLayer{ width:4437px; z-index:3; }
-  /* .wall-art -- нативный холст wall.png (3688x905): арки прописаны
-     через matrix3d именно в этих координатах (см. arch_transforms_new.json),
-     поэтому масштабируется единым transform:scale(900/905), а не через
-     width/height, чтобы координаты арок не пересчитывать. */
-  .wall-art{
+
+  .wall-backdrop{
     position:absolute;
-    top:0; left:0;
-    width:3688px; height:905px;
-    transform-origin:0 0;
-    transform:scale(0.994475138);
+    top:0; left:50%;
+    height:100%;
+    aspect-ratio:3688 / 905;
+    transform:translateX(-50%);
   }
-  .wall-art > img{
-    display:block; width:3688px; height:905px;
+  .wall-backdrop > img{
+    display:block; width:100%; height:100%;
     pointer-events:none;
     -webkit-user-drag:none;
     user-select:none;
   }
+
+  /* "Экран" с водой на стене -- маска вырезает овальную форму окна в
+     оправе арки; позиция/размер видео заданы в % от .wall-backdrop,
+     поэтому масштабируются вместе со стеной без JS. */
+  .wall-screen-mask{
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    mask-image:url('effects/water-mask.svg');
+    -webkit-mask-image:url('effects/water-mask.svg');
+    mask-size:100% 100%;
+    -webkit-mask-size:100% 100%;
+    mask-repeat:no-repeat;
+    -webkit-mask-repeat:no-repeat;
+  }
+  .wall-screen-mask video{
+    position:absolute;
+    left:38.43%; top:25.75%;
+    width:23.32%; height:52.82%;
+    object-fit:fill;
+  }
+
+  /* ---------- Арки ---------- */
   .arch{
     position:absolute;
-    top:0; left:0;
-    transform-origin:0 0;   /* как в эталонном файле: матрица сама несёт весь перенос */
-    /* Хит-тестинг переехал на .arch-lift (см. ниже) — .arch остаётся
-       носителем matrix3d/tabindex/role и всех обработчиков, но сам больше
-       не является целью указателя, чтобы не создавать вторую (неподвижную)
-       область клика поверх увеличивающегося .arch-lift. */
+    left:50%;
+    top:16vh;
+    width:20vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    transform-style:preserve-3d;
     pointer-events:none;
-    outline:none;           /* фокус показывается через .is-hovered (свечение), не рамкой */
+    outline:none; /* фокус показывается через .is-hovered (свечение), не рамкой */
     transition:filter 0.25s ease;
     filter:
       drop-shadow(0 0 0 rgba(255, 209, 128, 0))
@@ -116,96 +112,137 @@
     filter:
       drop-shadow(0 0 10px rgba(255, 209, 128, 0.55))
       drop-shadow(0 0 24px rgba(255, 178, 90, 0.35));
-    z-index:50; /* поднимаем только активную арку над соседями */
   }
-  .arch-lift{
-    position:absolute;
-    inset:0;
+
+  /* Позиция каждой арки вдоль "полукруглой" стены -- только translateX
+     (смещение вдоль комнаты) и rotateY (разворот к центру), как и было
+     задумано: не карусель с translateZ, а веер плоских панелей на
+     петлях, подобранный на глаз по corners_px исходного arch_transforms_new.json. */
+  /* translateZ(10vh) в начале цепочки применяется последним (после
+     rotateY), т.е. сдвигает уже повёрнутую плоскость арки целиком вперёд
+     вдоль оси Z комнаты -- иначе поворот вокруг собственного центра арки
+     уводит её дальнюю половину за плоскость z=0 стены, и та (будучи
+     непрозрачной) перекрывает часть арки/заголовка. */
+  #arch-1{ transform:translateZ(10vh) translateX(-50%) translateX(-60vh) rotateY(-55deg); }
+  #arch-2{ transform:translateZ(10vh) translateX(-50%) translateX(-40vh) rotateY(-35deg); }
+  #arch-3{ transform:translateZ(10vh) translateX(-50%) translateX(-16vh) rotateY(-15deg); }
+  #arch-4{ transform:translateZ(10vh) translateX(-50%) translateX(16vh)  rotateY(15deg); }
+  #arch-5{ transform:translateZ(10vh) translateX(-50%) translateX(40vh)  rotateY(35deg); }
+  #arch-6{ transform:translateZ(10vh) translateX(-50%) translateX(60vh)  rotateY(55deg); }
+
+  .arch-title{
     width:100%;
-    height:100%;
-    transform-origin:50% 100%;
+    box-sizing:border-box;
+    margin:0 0 0.6vh;
+    font-family:'Cinzel', Georgia, 'Times New Roman', serif;
+    font-weight:600;
+    font-size:2.1vh;
+    line-height:1.2;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+    text-align:center;
+    overflow-wrap:break-word;
+    background:linear-gradient(180deg, #fff6d8 0%, #e8c375 35%, #ad7a2e 65%, #f6dfa6 100%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+    -webkit-text-fill-color:transparent;
+    text-shadow:0 1px 2px rgba(0,0,0,0.45);
+  }
+
+  .arch-lift{
+    position:relative;
+    width:100%;
     transition:transform 0.25s ease;
     will-change:transform;
-    /* ВАЖНО: .arch-lift сам по себе больше НЕ несёт clip-path и не является
-       целью указателя. clip-path — это не только "маска для хит-тестинга":
-       он ОБРЕЗАЕТ реальные видимые пиксели любого элемента, на котором
-       висит. Раньше clip-path висел прямо здесь, на контейнере картинки,
-       и поэтому обрезал часть надписи (у длинных заголовков вроде "Global
-       Connections") и заставлял hover-свечение (filter:drop-shadow на
-       .arch) обводить не силуэт арки, а срезанный клипом восьмиугольник —
-       отсюда "скруглённые"/срезанные углы при наведении. Клик/hover-маска
-       вынесена в отдельный невидимый .arch-hit ниже, поверх изображения,
-       но того же transform-контекста (масштабируется вместе с .arch-lift
-       при hover). */
-    pointer-events:none;
   }
   .arch.is-hovered .arch-lift{
-    transform:scale(1.03);
+    transform:translateZ(3.5vh); /* арка "выезжает" на зрителя, а не масштабируется */
   }
   .arch-image{
     display:block;
     width:100%;
-    height:100%;
+    height:auto;
     pointer-events:none;
     -webkit-user-drag:none;
     user-select:none;
   }
   /* Реальная кликабельная/hover-область: невидимый слой поверх картинки,
-     той же формы/размера, но БЕЗ визуального содержимого — clip-path на
-     нём сужает только хит-тестинг, никогда не трогая пиксели .arch-image.
-     Лежит внутри .arch-lift, поэтому увеличивается вместе с картинкой при
-     hover (scale(1.03)), как и было задумано. */
+     обрезанный по силуэту арки (альфа-канал одинаков у всех шести тел
+     арок, поэтому один и тот же clip-path подходит всем). */
   .arch-hit{
     position:absolute;
     inset:0;
-    width:100%;
-    height:100%;
     pointer-events:auto;
     cursor:pointer;
+    clip-path:polygon(37.02% 0%, 9.65% 8.34%, 1.13% 16.68%, 0% 25.02%, 0% 33.36%, 0% 41.70%, 0% 50.04%, 0% 58.30%, 0% 66.64%, 0% 74.98%, 0% 83.32%, 0% 91.66%, 99.57% 91.66%, 99.57% 83.32%, 99.57% 74.98%, 99.57% 66.64%, 99.57% 58.30%, 99.57% 50.04%, 99.57% 41.70%, 99.57% 33.36%, 99.57% 25.02%, 98.16% 16.68%, 89.79% 8.34%, 62.98% 0%);
   }
+
   @media (prefers-reduced-motion: reduce){
     .arch, .arch-lift{ transition:none; }
   }
 
-  /* Точечное сужение кликабельной/hover-области по краям: PNG уже
-     обрезаны по общему bbox "заголовок + арка", но сам bbox — прямоугольник,
-     а видимое содержимое (узкий заголовок сверху, скруглённый свод арки,
-     фаска у основания) прозрачно по углам — там наведение/клик работали бы
-     "по воздуху". Полигоны посчитаны офлайн по альфа-каналу каждого PNG
-     (реальный canvas-alpha-hit-test в браузере недоступен: при открытии
-     файла как file:// canvas помечается tainted и getImageData бросает
-     SecurityError — так же, как в эталонном main.js). Каждый вырез —
-     заведомо (с запасом) меньше подтверждённо прозрачной области. Висит на
-     .arch-hit (не на .arch-lift/.arch-image), поэтому не обрезает видимые
-     пиксели картинки — сужает только зону наведения/клика. */
-  #arch-1 .arch-hit{ clip-path: polygon(26.31% 0%, 74.54% 0%, 100% 26.84%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.21%); }
-  #arch-2 .arch-hit{ clip-path: polygon(17.55% 0%, 83.30% 0%, 100% 27.01%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.39%); }
-  #arch-3 .arch-hit{ clip-path: polygon(23.20% 0%, 78.07% 0%, 100% 26.66%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.04%); }
-  #arch-4 .arch-hit{ clip-path: polygon(9.21% 0%, 91.77% 0%, 100% 26.89%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.27%); }
-  #arch-5 .arch-hit{ clip-path: polygon(20.23% 0%, 81.32% 0%, 100% 27.01%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.39%); }
-  #arch-6 .arch-hit{ clip-path: polygon(16.98% 0%, 84.43% 0%, 100% 27.01%, 100% 96.92%, 96.86% 100%, 3.00% 100%, 0% 96.92%, 0% 26.39%); }
+  /* ==========================================================
+     Мобильный брейкпоинт (< ~700px): 3D-сцена нечитаема на узких
+     экранах -- арки полностью обрезаются. Вместо неё -- обычный
+     вертикальный список карточек, без 3D и без параллакса.
+     ========================================================== */
+  .mobile-list{ display:none; }
 
-  #guideSvg{ position:absolute; top:0; left:0; width:3688px; height:905px; pointer-events:none; display:none; }
-  body.show-guides #guideSvg{ display:block; }
-  #guideSvg polygon{ fill:rgba(0,201,122,.12); stroke:#00c97a; stroke-width:2.5; }
-  #guideSvg text{ fill:#04150c; font-size:16px; font-weight:700; }
-  #guideSvg .lbl-bg{ fill:#00c97a; }
-
-  body.show-panels .stage::before{
-    content:"";
-    position:absolute; inset:0;
-    background-image:url('ШАБЛОН v1.png');
-    background-size:100% 100%;
-    opacity:.30;
-    pointer-events:none;
+  @media (max-width:700px){
+    .viewport-outer{ display:none; }
+    .mobile-list{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+      min-height:100vh;
+      box-sizing:border-box;
+      padding:24px 16px 48px;
+      background:#0a0a0a;
+    }
+    .mobile-card{
+      display:flex;
+      align-items:center;
+      gap:16px;
+      background:#141210;
+      border:1px solid rgba(217, 184, 119, 0.35);
+      padding:12px;
+      text-align:left;
+      color:#eee;
+      cursor:pointer;
+    }
+    .mobile-card:focus-visible{ outline:2px solid #e8c375; outline-offset:2px; }
+    .mobile-card-thumb{
+      flex:0 0 auto;
+      width:64px; height:auto;
+      display:block;
+      -webkit-user-drag:none;
+      user-select:none;
+    }
+    .mobile-card-text h3{
+      margin:0 0 6px;
+      font-family:'Cinzel', Georgia, serif;
+      font-weight:600;
+      font-size:16px;
+      letter-spacing:0.03em;
+      text-transform:uppercase;
+      background:linear-gradient(180deg, #fff6d8 0%, #e8c375 35%, #ad7a2e 65%, #f6dfa6 100%);
+      -webkit-background-clip:text;
+      background-clip:text;
+      color:transparent;
+      -webkit-text-fill-color:transparent;
+    }
+    .mobile-card-text p{
+      margin:0;
+      font-size:13px;
+      line-height:1.5;
+      color:rgba(238,238,238,0.72);
+    }
   }
 
   /* ---------- Section modal ----------
-     Прямой потомок body (см. разметку ниже), вне .viewport-outer/
-     #stage-holder/#scene-parallax/.stage — поэтому не наследует
-     cover-масштаб, translateX/rotateY parallax и не обрезается через
-     overflow:hidden сцены. Оформление 1:1 адаптировано из
-     Glonari-Global-Scene-v1/section-modal.css. */
+     Прямой потомок body -- вне .viewport-outer/.room, поэтому не
+     наследует rotateY комнаты и не обрезается overflow:hidden сцены. */
   #modal-overlay{
     --gold-bright:#ffe9b8;
     --gold-bright-rgb:255,233,184;
@@ -281,9 +318,7 @@
   /* ---------- Кастомный курсор ----------
      Прямые потомки body, вне трансформированной сцены. Скрыты по
      умолчанию (display:none) и включаются JS только после успешной
-     инициализации (html.cursor-ready) — если скрипт не выполнится,
-     системный курсор не пропадёт (см. .arch{cursor:pointer} выше и
-     отсутствие global cursor:none без этого класса). */
+     инициализации (html.cursor-ready). */
   .cursor-dot, .cursor-ring{
     display:none;
     position:fixed;
@@ -333,85 +368,133 @@
 <body>
 
 <div class="viewport-outer">
-  <div id="stage-holder">
-    <div id="scene-parallax">
-    <div class="stage" id="stage">
-      <div id="subjectsLayer" class="bg-layer">
-        <img src="layers/subjects.png" alt="" style="pointer-events:none;">
-      </div>
+  <img class="flat-layer subjects-layer" src="layers/subjects.png" alt="">
 
-      <div id="giaLayer" class="bg-layer">
-        <img src="layers/Gia.png" alt="" style="pointer-events:none;">
-      </div>
+  <div class="room" id="room">
+    <div class="wall-backdrop">
+      <img src="layers/wall.png" alt="background wall">
 
-      <div id="wallLayer" class="bg-layer">
-        <div class="wall-art">
-          <img src="layers/wall.png" alt="background wall">
-
-          <!-- "Экран" с водой на стене: видео внутри .wall-art, чтобы
-               унаследовать тот же scale()/translateX(), что и сама стена
-               (RANGE_WALL) -- без отдельного JS. Маска (пересечение mask0+
-               mask1 из effects/water-mask.svg) вырезает овальную форму
-               экрана; вне неё контейнер полностью прозрачен и не мешает
-               аркам ни визуально (x:1417-2277 лежит между arch-3 и arch-4,
-               не пересекается ни с одной аркой), ни по кликам
-               (pointer-events:none, наследуется видео). -->
-          <div class="wall-screen-mask" style="position:absolute; top:0; left:0; width:3688px; height:900px; pointer-events:none; mask-image:url('effects/water-mask.svg'); -webkit-mask-image:url('effects/water-mask.svg'); mask-size:3688px 900px; -webkit-mask-size:3688px 900px; mask-repeat:no-repeat; -webkit-mask-repeat:no-repeat;">
-            <video autoplay muted loop playsinline
-                   style="position:absolute; left:1417px; top:233px; width:860px; height:478px; object-fit:fill;">
-              <source src="effects/water.mp4" type="video/mp4">
-            </video>
-          </div>
-
-          <div class="arch arch-interactive" id="arch-1" data-section="experience"
-               tabindex="0" role="button" aria-label="Experience — open section"
-               style="width:708px; height:1288px; transform:matrix3d(0.593087176, 0.094243453, 0, 0.000179375, 0, 0.449534161, 0, 0, 0, 0, 1, 0, 162, 178, 0, 1);">
-            <div class="arch-lift"><img class="arch-image" src="cropped-new/1.png" alt="" draggable="false"><div class="arch-hit"></div></div>
-          </div>
-
-          <div class="arch arch-interactive" id="arch-2" data-section="globalReserve"
-               tabindex="0" role="button" aria-label="Global Reserve — open section"
-               style="width:708px; height:1291px; transform:matrix3d(0.63025894, 0.106495922, 0, 0.000199312, 0, 0.377226956, 0, 0, 0, 0, 1, 0, 646, 234, 0, 1);">
-            <div class="arch-lift"><img class="arch-image" src="cropped-new/2.png" alt="" draggable="false"><div class="arch-hit"></div></div>
-          </div>
-
-          <div class="arch arch-interactive" id="arch-3" data-section="moveMoney"
-               tabindex="0" role="button" aria-label="Move Money — open section"
-               style="width:708px; height:1285px; transform:matrix3d(0.620949567, 0.10249015, 0, 0.000185185, 0, 0.316731518, 0, 0, 0, 0, 1, 0, 1067, 285, 0, 1);">
-            <div class="arch-lift"><img class="arch-image" src="cropped-new/3.png" alt="" draggable="false"><div class="arch-hit"></div></div>
-          </div>
-
-          <div class="arch arch-interactive" id="arch-4" data-section="globalConnections"
-               tabindex="0" role="button" aria-label="Global Connections — open section"
-               style="width:708px; height:1289px; transform:matrix3d(-0.046038301, -0.089661422, 0, -0.000160315, 0, 0.280062064, 0, 0, 0, 0, 1, 0, 2359, 316, 0, 1);">
-            <div class="arch-lift"><img class="arch-image" src="cropped-new/4.png" alt="" draggable="false"><div class="arch-hit"></div></div>
-          </div>
-
-          <div class="arch arch-interactive" id="arch-5" data-section="globalDream"
-               tabindex="0" role="button" aria-label="Global Dream — open section"
-               style="width:708px; height:1291px; transform:matrix3d(-0.092242271, -0.093375275, 0, -0.000174756, 0, 0.330751356, 0, 0, 0, 0, 1, 0, 2734, 271, 0, 1);">
-            <div class="arch-lift"><img class="arch-image" src="cropped-new/5.png" alt="" draggable="false"><div class="arch-hit"></div></div>
-          </div>
-
-          <div class="arch arch-interactive" id="arch-6" data-section="recordLibrary"
-               tabindex="0" role="button" aria-label="Record Library — open section"
-               style="width:708px; height:1291px; transform:matrix3d(-0.061081101, -0.083663445, 0, -0.000159238, 0, 0.398140976, 0, 0, 0, 0, 1, 0, 3175, 217, 0, 1);">
-            <div class="arch-lift"><img class="arch-image" src="cropped-new/6.png" alt="" draggable="false"><div class="arch-hit"></div></div>
-          </div>
-
-          <svg id="guideSvg" viewBox="0 0 3688 905">
-            <g id="guideGroup"></g>
-          </svg>
-        </div>
+      <div class="wall-screen-mask">
+        <video autoplay muted loop playsinline>
+          <source src="effects/water.mp4" type="video/mp4">
+        </video>
       </div>
     </div>
+
+    <div class="arch arch-interactive" id="arch-1" data-section="experience"
+         tabindex="0" role="button" aria-label="Experience — open section">
+      <div class="arch-title">Experience</div>
+      <div class="arch-lift">
+        <img class="arch-image" src="arch-body-1.png" alt="" draggable="false">
+        <div class="arch-hit"></div>
+      </div>
+    </div>
+
+    <div class="arch arch-interactive" id="arch-2" data-section="globalReserve"
+         tabindex="0" role="button" aria-label="Global Reserve — open section">
+      <div class="arch-title">Global Reserve</div>
+      <div class="arch-lift">
+        <img class="arch-image" src="arch-body-2.png" alt="" draggable="false">
+        <div class="arch-hit"></div>
+      </div>
+    </div>
+
+    <div class="arch arch-interactive" id="arch-3" data-section="moveMoney"
+         tabindex="0" role="button" aria-label="Move Money — open section">
+      <div class="arch-title">Move Money</div>
+      <div class="arch-lift">
+        <img class="arch-image" src="arch-body-3.png" alt="" draggable="false">
+        <div class="arch-hit"></div>
+      </div>
+    </div>
+
+    <div class="arch arch-interactive" id="arch-4" data-section="globalConnections"
+         tabindex="0" role="button" aria-label="Global Connections — open section">
+      <div class="arch-title">Global Connections</div>
+      <div class="arch-lift">
+        <img class="arch-image" src="arch-body-4.png" alt="" draggable="false">
+        <div class="arch-hit"></div>
+      </div>
+    </div>
+
+    <div class="arch arch-interactive" id="arch-5" data-section="globalDream"
+         tabindex="0" role="button" aria-label="Global Dream — open section">
+      <div class="arch-title">Global Dream</div>
+      <div class="arch-lift">
+        <img class="arch-image" src="arch-body-5.png" alt="" draggable="false">
+        <div class="arch-hit"></div>
+      </div>
+    </div>
+
+    <div class="arch arch-interactive" id="arch-6" data-section="recordLibrary"
+         tabindex="0" role="button" aria-label="Record Library — open section">
+      <div class="arch-title">Record Library</div>
+      <div class="arch-lift">
+        <img class="arch-image" src="arch-body-6.png" alt="" draggable="false">
+        <div class="arch-hit"></div>
+      </div>
+    </div>
+  </div>
+
+  <img class="flat-layer gia-layer" src="layers/Gia.png" alt="">
+</div>
+
+<!-- Мобильная версия (< ~700px): вертикальный список карточек вместо
+     3D-сцены. Те же data-section/tabindex/role, что и у арок -- модалка
+     и клавиатурная навигация переиспользуются без изменений в JS. -->
+<div class="mobile-list">
+  <div class="mobile-card arch-interactive" data-section="experience"
+       tabindex="0" role="button" aria-label="Experience — open section">
+    <img class="mobile-card-thumb" src="arch-body-1.png" alt="">
+    <div class="mobile-card-text">
+      <h3>Experience</h3>
+      <p>Content for this section will be added later.</p>
+    </div>
+  </div>
+  <div class="mobile-card arch-interactive" data-section="globalReserve"
+       tabindex="0" role="button" aria-label="Global Reserve — open section">
+    <img class="mobile-card-thumb" src="arch-body-2.png" alt="">
+    <div class="mobile-card-text">
+      <h3>Global Reserve</h3>
+      <p>Content for this section will be added later.</p>
+    </div>
+  </div>
+  <div class="mobile-card arch-interactive" data-section="moveMoney"
+       tabindex="0" role="button" aria-label="Move Money — open section">
+    <img class="mobile-card-thumb" src="arch-body-3.png" alt="">
+    <div class="mobile-card-text">
+      <h3>Move Money</h3>
+      <p>Content for this section will be added later.</p>
+    </div>
+  </div>
+  <div class="mobile-card arch-interactive" data-section="globalConnections"
+       tabindex="0" role="button" aria-label="Global Connections — open section">
+    <img class="mobile-card-thumb" src="arch-body-4.png" alt="">
+    <div class="mobile-card-text">
+      <h3>Global Connections</h3>
+      <p>Content for this section will be added later.</p>
+    </div>
+  </div>
+  <div class="mobile-card arch-interactive" data-section="globalDream"
+       tabindex="0" role="button" aria-label="Global Dream — open section">
+    <img class="mobile-card-thumb" src="arch-body-5.png" alt="">
+    <div class="mobile-card-text">
+      <h3>Global Dream</h3>
+      <p>Content for this section will be added later.</p>
+    </div>
+  </div>
+  <div class="mobile-card arch-interactive" data-section="recordLibrary"
+       tabindex="0" role="button" aria-label="Record Library — open section">
+    <img class="mobile-card-thumb" src="arch-body-6.png" alt="">
+    <div class="mobile-card-text">
+      <h3>Record Library</h3>
+      <p>Content for this section will be added later.</p>
     </div>
   </div>
 </div>
 
-<!-- Modal: прямой потомок body — вне .viewport-outer/#stage-holder/
-     #scene-parallax/.stage, чтобы не наследовать cover-масштаб/
-     translateX/rotateY и не обрезаться overflow:hidden сцены. -->
+<!-- Modal: прямой потомок body — вне .viewport-outer/.room, чтобы не
+     наследовать rotateY комнаты и не обрезаться overflow:hidden сцены. -->
 <div id="modal-overlay" aria-hidden="true">
   <div id="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-desc">
     <h2 id="modal-title"></h2>
@@ -425,124 +508,26 @@
 <div class="cursor-ring" aria-hidden="true"></div>
 
 <script>
-  const CORNERS = {
-    1: {TL:[162,178], TR:[515,217], BR:[515,731], BL:[162,757], title:"1 · Experience"},
-    2: {TL:[646,234], TR:[956,271], BR:[956,698], BL:[646,721], title:"2 · Global Reserve"},
-    3: {TL:[1067,285], TR:[1331,316], BR:[1331,676], BL:[1067,692], title:"3 · Move Money"},
-    4: {TL:[2359,316], TR:[2623,285], BR:[2623,692], BL:[2359,677], title:"4 · Global Connections"},
-    5: {TL:[2734,271], TR:[3044,234], BR:[3044,721], BL:[2734,698], title:"5 · Global Dream"},
-    6: {TL:[3175,217], TR:[3528,178], BR:[3528,757], BL:[3175,731], title:"6 · Record Library"},
-  };
-
-  const svgNS = "http://www.w3.org/2000/svg";
-  const g = document.getElementById('guideGroup');
-  Object.values(CORNERS).forEach(c=>{
-    const pts = [c.TL,c.TR,c.BR,c.BL].map(p=>p.join(',')).join(' ');
-    const poly = document.createElementNS(svgNS,'polygon');
-    poly.setAttribute('points', pts);
-    g.appendChild(poly);
-    const cx = (c.TL[0]+c.TR[0]+c.BR[0]+c.BL[0])/4;
-    const cy = Math.min(c.TL[1],c.TR[1]) - 10;
-    const bg = document.createElementNS(svgNS,'rect');
-    const label = c.title;
-    const textEl = document.createElementNS(svgNS,'text');
-    textEl.setAttribute('x', cx); textEl.setAttribute('y', cy);
-    textEl.setAttribute('text-anchor','middle');
-    textEl.textContent = label;
-    g.appendChild(textEl);
-  });
-
-  const holder = document.getElementById('stage-holder');
-
-  // Служебная панель (кнопки показа зон/шаблона, индикатор масштаба) убрана
-  // из интерфейса; сами CSS-классы .show-guides/.show-panels и #guideSvg
-  // остаются рабочими и переключаемыми вручную через консоль
-  // (document.body.classList.toggle('show-guides')), просто без UI-кнопок.
-
   // ---------------------------------------------------------------------
-  // Mouse-parallax общего контейнера сцены (#scene-parallax) + авто
-  // cover-масштаб #stage-holder. Принцип движения — из референса
-  // Glonari-Global-Scene-v1 (main.js): нормализация мыши в -1..1
-  // относительно видимой области, requestAnimationFrame с кадронезависимым
-  // экспоненциальным сглаживанием (TAU), безопасная амплитуда из реального
-  // избытка ширины сцены над видимой областью, возврат в центр при уходе
-  // мыши/потере фокуса, отключение при touch и prefers-reduced-motion.
-  // Один общий уровень движения для всей сцены (фон + все арки как единый
-  // объект) — отдельного parallax/поворота для арок нет.
+  // Mouse-parallax: единственное движение сцены -- поворот всей .room
+  // по Y в диапазоне +-MAX_ROTATE_DEG, по нормализованной позиции мыши
+  // внутри .viewport-outer (тот же принцип сглаживания через TAU/rAF,
+  // что и раньше, просто без пересчёта per-layer translateX и без
+  // JS-масштабирования сцены -- фон и арки теперь настоящие CSS-проценты/vh
+  // и адаптируются к вьюпорту сами по себе).
   (() => {
-    const STAGE_WIDTH = 2546;
-    const STAGE_HEIGHT = 900;
-    const BLEED = 1.05;          // запас cover-масштаба под поворот, диапазон 1.04–1.07
     const TAU = 0.6;             // постоянная времени сглаживания (сек)
-    const MAX_ROTATE_DEG = 4.5;  // максимальный угол поворота сцены в каждую сторону
-    const PERSPECTIVE_PX = 2500; // держит поворот "камерой", а не поворотом плоской карточки
-    const STOP_THRESHOLD = 0.0005; // нормализованные единицы (-1..1)
+    const MAX_ROTATE_DEG = 4.5;  // максимальный угол поворота комнаты в каждую сторону
+    const STOP_THRESHOLD = 0.0005;
 
-    const sceneViewport = document.querySelector('.viewport-outer');
-    const parallax = document.getElementById('scene-parallax');
-    const wallLayer = document.getElementById('wallLayer');
-    const subjectsLayer = document.getElementById('subjectsLayer');
-    const giaLayer = document.getElementById('giaLayer');
-    if (!sceneViewport || !holder || !parallax) return;
-
-    // ---------------------------------------------------------------------
-    // Разноскоростной параллакс двух фоновых слоёв (стены+купол / пол+
-    // предметы), ДОПОЛНИТЕЛЬНО к общему наклону #scene-parallax выше.
-    // Амплитуда каждого слоя -- фиксированная константа в локальных
-    // координатах сцены (2546px), а не от реального вьюпорта: слои сами
-    // уже находятся внутри системы, которую целиком масштабирует
-    // cover-scale #stage-holder. Логика и сглаживание -- как в общем
-    // наклоне сцены (используем то же smooth.nx), коэффициенты -- из
-    // реального превышения отрендеренной ширины каждого слоя (при
-    // выравнивании по высоте сцены, 900px) над локальной шириной сцены.
-    const WALL_W = 3688, WALL_H = 905;     // layers/wall.png
-    const SUBJ_W = 4437, SUBJ_H = 900;     // layers/subjects.png (тот же размер у layers/Gia.png)
-    const wallRenderedW = STAGE_HEIGHT * (WALL_W / WALL_H);
-    const subjRenderedW = STAGE_HEIGHT * (SUBJ_W / SUBJ_H);
-    const RANGE_WALL = Math.max(0, (wallRenderedW - STAGE_WIDTH) / 2);
-    // RANGE_SUBJ используется и для #subjectsLayer, и для #giaLayer -- Gia
-    // сделана того же размера (4437x900), едет один в один с предметами.
-    const RANGE_SUBJ = Math.max(0, (subjRenderedW - STAGE_WIDTH) / 2);
+    const viewport = document.querySelector('.viewport-outer');
+    const room = document.getElementById('room');
+    if (!viewport || !room) return;
 
     const reduceMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
 
     function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
-
-    // rotateY(MAX_ROTATE_DEG) в перспективной проекции подтягивает дальний
-    // (по ходу поворота) край плоскости внутрь — этот "усадочный" запас
-    // считается один раз аналитически (в локальных координатах сцены,
-    // т.е. до масштабирования #stage-holder) и вычитается из амплитуды
-    // движения, чтобы на максимуме угла у дальнего края не появлялся зазор.
-    function computeRotationShrinkLocal() {
-      const halfWidth = STAGE_WIDTH / 2;
-      const theta = MAX_ROTATE_DEG * Math.PI / 180;
-      const zShift = halfWidth * Math.sin(theta);
-      const trailingFactor = PERSPECTIVE_PX / (PERSPECTIVE_PX + zShift);
-      const projectedHalf = halfWidth * Math.cos(theta) * trailingFactor;
-      return Math.max(0, halfWidth - projectedHalf);
-    }
-    const ROTATION_SHRINK_LOCAL = computeRotationShrinkLocal();
-
-    let renderScale = 1;
-    let maxTravelX = 0; // безопасная амплитуда в локальных координатах #scene-parallax (0..STAGE_WIDTH)
-
-    function layout() {
-      const vw = sceneViewport.clientWidth;
-      const vh = sceneViewport.clientHeight;
-      if (vw === 0 || vh === 0) return;
-
-      const coverScale = Math.max(vw / STAGE_WIDTH, vh / STAGE_HEIGHT);
-      renderScale = coverScale * BLEED;
-      holder.style.transform = `translate(-50%, -50%) scale(${renderScale})`;
-
-      // Реальный избыток ширины отрендеренной сцены над видимой областью,
-      // переведённый в локальные координаты сцены (внутри scale(renderScale)).
-      const halfOverflowLocal = Math.max(0, (STAGE_WIDTH - vw / renderScale) / 2);
-      maxTravelX = Math.max(0, halfOverflowLocal - ROTATION_SHRINK_LOCAL);
-
-      target.nx = clamp(target.nx, -1, 1);
-    }
 
     const target = { nx: 0 };
     const smooth = { nx: 0 };
@@ -550,16 +535,8 @@
     let lastTime = null;
 
     function apply() {
-      const tx = (-smooth.nx * maxTravelX).toFixed(2);
       const rot = (-smooth.nx * MAX_ROTATE_DEG).toFixed(3);
-      parallax.style.transform =
-        `perspective(${PERSPECTIVE_PX}px) translate3d(${tx}px, 0, 0) rotateY(${rot}deg)`;
-
-      const txWall = (-smooth.nx * RANGE_WALL).toFixed(2);
-      const txSubj = (-smooth.nx * RANGE_SUBJ).toFixed(2);
-      if (wallLayer) wallLayer.style.transform = `translateX(calc(-50% + ${txWall}px))`;
-      if (subjectsLayer) subjectsLayer.style.transform = `translateX(calc(-50% + ${txSubj}px))`;
-      if (giaLayer) giaLayer.style.transform = `translateX(calc(-50% + ${txSubj}px))`;
+      room.style.transform = `rotateY(${rot}deg)`;
     }
 
     function startLoop() {
@@ -592,8 +569,8 @@
       rafId = requestAnimationFrame(tick);
     }
 
-    function setTargetFromPointer(clientX, clientY) {
-      const rect = sceneViewport.getBoundingClientRect();
+    function setTargetFromPointer(clientX) {
+      const rect = viewport.getBoundingClientRect();
       if (rect.width === 0) return;
       target.nx = clamp(((clientX - rect.left) / rect.width - 0.5) * 2, -1, 1);
       startLoop();
@@ -606,7 +583,7 @@
 
     function handlePointerMove(e) {
       if (e.pointerType && e.pointerType !== 'mouse') return;
-      setTargetFromPointer(e.clientX, e.clientY);
+      setTargetFromPointer(e.clientX);
     }
 
     function handlePointerLeave(e) {
@@ -615,14 +592,14 @@
     }
 
     function enableMovement() {
-      sceneViewport.addEventListener('pointermove', handlePointerMove);
-      sceneViewport.addEventListener('pointerleave', handlePointerLeave);
+      viewport.addEventListener('pointermove', handlePointerMove);
+      viewport.addEventListener('pointerleave', handlePointerLeave);
       window.addEventListener('blur', resetTarget);
     }
 
     function disableMovement() {
-      sceneViewport.removeEventListener('pointermove', handlePointerMove);
-      sceneViewport.removeEventListener('pointerleave', handlePointerLeave);
+      viewport.removeEventListener('pointermove', handlePointerMove);
+      viewport.removeEventListener('pointerleave', handlePointerLeave);
       window.removeEventListener('blur', resetTarget);
       stopLoop();
       target.nx = 0;
@@ -638,24 +615,18 @@
       }
     }
 
-    layout();
     apply();
     applyMotionPreference();
 
-    window.addEventListener('resize', () => { layout(); });
     reduceMotionQuery.addEventListener('change', applyMotionPreference);
     finePointerQuery.addEventListener('change', applyMotionPreference);
   })();
 
   // ---------------------------------------------------------------------
   // Интерактивность арок: hover/focus-свечение, modal, кастомный курсор.
-  // Полностью независимый блок — не читает и не трогает переменные/DOM
-  // parallax-блока выше (кроме общих CSS-классов на самих арках, которые
-  // тот блок не использует). Принципы поведения адаптированы из
-  // Glonari-Global-Scene-v1 (main.js/section-modal.js/styles.css):
-  // единое "elevated" состояние (hover || focus) на арку, курсор реагирует
-  // на то же состояние, focus-trap + Escape в модалке. Названия и тексты
-  // секций — свои, не скопированы из референса.
+  // Полностью независимый блок -- работает с любыми `.arch-interactive`
+  // элементами по data-section, поэтому подходит и для 3D-арок, и для
+  // мобильных карточек списка без изменений.
   (() => {
     const ARCH_CONTENT = {
       experience: { title: 'Experience', description: 'Content for this section will be added later.' },
